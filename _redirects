@@ -1,5 +1,5 @@
 # Older WordPress-era post URLs → current post URLs
-/fairy-glow-mother/*  /blog/:splat  301
 /fairy-glow-mother    /blog         301
+/fairy-glow-mother/*  /blog/:splat  301
 # Preview-only article URLs from the first rebuild
 /articles/*           /blog/:splat  301

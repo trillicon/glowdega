@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Gazette Admin — GLOWDEGA®</title>
+<link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+<header class="bar">
+  <a class="logo" href="/admin/">GLOWDEGA® <span>ADMIN</span></a>
+  <div class="who"><span id="who"></span><a href="/" target="_blank" rel="noopener">View site ↗</a></div>
+</header>
+
+<div class="layout">
+  <aside class="queue" aria-label="Posts">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-state="draft" aria-selected="true">Drafts <b></b></button>
+      <button role="tab" data-state="scheduled">Scheduled <b></b></button>
+      <button role="tab" data-state="published">Published <b></b></button>
+      <button role="tab" data-state="rejected">Rejected <b></b></button>
+    </nav>
+    <ul id="list" class="list"></ul>
+    <p id="empty" class="empty" hidden></p>
+  </aside>
+
+  <main class="editor" id="editor" hidden>
+    <div class="editor-head">
+      <span class="badge" id="badge"></span>
+      <span class="meta" id="meta"></span>
+    </div>
+    <form id="form" autocomplete="off">
+      <label>Title<input name="title" required maxlength="200"></label>
+      <div class="row">
+        <label>URL<span class="slug"><span>/blog/</span><input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="80"></span></label>
+        <label>Category<input name="category" maxlength="60" placeholder="e.g. Acne"></label>
+      </div>
+      <label>Excerpt <small>Shown on cards and in search results. Leave blank to use the opening lines.</small>
+        <textarea name="excerpt" rows="2" maxlength="400"></textarea></label>
+      <label>Featured image URL <small>https:// only. Optional.</small><input name="hero_image" type="url" maxlength="1000" placeholder="https://"></label>
+      <label>Body <small>Markdown. ## for headings, **bold**, *italic*, - lists, [text](https://link).</small>
+        <textarea name="body_md" rows="22" class="mono" required></textarea></label>
+    </form>
+    <p class="note" id="reviewNote" hidden></p>
+
+    <div class="actions" id="actions">
+      <button type="button" data-act="save" class="secondary">Save changes</button>
+      <a id="previewLink" class="secondary" target="_blank" rel="noopener">Preview ↗</a>
+      <span class="spacer"></span>
+      <span class="group" data-show="draft rejected">
+        <button type="button" data-act="approve" class="primary">Approve &amp; publish now</button>
+        <span class="schedule"><input type="datetime-local" id="when" aria-label="Publish date and time"><button type="button" data-act="schedule" class="secondary">Schedule</button></span>
+      </span>
+      <span class="group" data-show="draft">
+        <button type="button" data-act="reject" class="ghost">Reject…</button>
+      </span>
+      <span class="group" data-show="scheduled published">
+        <button type="button" data-act="unpublish" class="secondary">Unpublish</button>
+        <a id="liveLink" class="secondary" target="_blank" rel="noopener" data-show="published">Live post ↗</a>
+      </span>
+      <span class="group" data-show="draft rejected">
+        <button type="button" data-act="delete" class="ghost danger">Delete</button>
+      </span>
+    </div>
+  </main>
+
+  <section class="welcome" id="welcome">
+    <h1>Review queue</h1>
+    <p>Pick a post on the left. Drafts arrive here from the drafts API; nothing goes live until you approve it.</p>
+  </section>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/admin/admin.js" type="module"></script>
+</body>
+</html>

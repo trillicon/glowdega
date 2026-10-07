@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "include": ["/", "/blog", "/blog/*", "/admin", "/admin/*", "/api/*", "/tools/*", "/functions/*", "/migrations/*"],
+  "exclude": ["/assets/*"]
+}
