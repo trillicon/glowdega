@@ -13,7 +13,7 @@ footer{border-top:1px solid var(--rule);padding:28px 4vw 45px;display:grid;grid-
 /* Gazette article pages */
 .eyebrow a,.grid-head a{text-decoration:none}.eyebrow a:hover,.grid-head a:hover{text-decoration:underline}
 .article-hero h1{font-size:clamp(40px,6vw,96px);line-height:.98;letter-spacing:-.045em;text-wrap:balance}.article-meta{gap:8px 22px;color:var(--muted)}
-.article-image{max-width:var(--max);margin:auto;padding:5vw 4vw 0}.article-image img{width:100%;max-height:72vh;object-fit:cover;border:1px solid var(--rule)}
+.article-image{max-width:var(--max);margin:auto;padding:5vw 4vw 0}.article-image img{width:auto;max-width:100%;max-height:85vh;height:auto;border:1px solid var(--rule)}
 .prose>:first-child{margin-top:0}.prose a{text-decoration-thickness:1px;text-underline-offset:3px}.prose a:hover{background:var(--acid)}
 .prose h4{font-family:"DM Sans",Arial,sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.1em;margin:2em 0 .6em}
 .prose ul,.prose ol{margin:0 0 1.4em;padding-left:1.3em}.prose li{margin:0 0 .5em;padding-left:.2em}.prose li>p{margin:0}
