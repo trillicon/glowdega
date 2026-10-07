@@ -27,8 +27,11 @@ for p in pages:
 home = read('index.html')
 grid = re.search(r'<div class="post-grid">(.*?)</div><p style', home, re.S).group(1)
 WELCOME = ('GLOWDEGA® was an inclusive skin studio created by Hadiyah Daché in Oakland, CA and open to all humans '
-           'with skin. We officially closed our doors on April 30, 2026.')
-check(re.search(r'<div class="hero-copy">(.*?)</div>', home, re.S).group(1) == f'<p>{WELCOME}</p>',
+           'with skin. We officially closed our doors on April 30, 2026.',
+           '<strong>THIS IS THE GLOWDEGA ARCHIVE</strong>. Over 100 articles and advice on skin health including acne, '
+           'hyperpigmentation, skincare routine help and more! While the physical location is no more, help will always '
+           'be here just one click away!')
+check(re.search(r'<div class="hero-copy">(.*?)</div>', home, re.S).group(1) == ''.join(f'<p>{w}</p>' for w in WELCOME),
       'home: welcome text is not the approved copy')
 check(grid.count('class="card"') == 12, 'home: expected 12 cards')
 check(not DATE.search(grid), 'home: cards show dates')
