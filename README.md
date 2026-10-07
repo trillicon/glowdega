@@ -17,8 +17,8 @@ GLOWDEGA® Gazette — static archive on Cloudflare Pages, plus an admin for rev
 Rebuild the archive: `python3 -I tools/build.py <export.xml> .`, then check it: `python3 -I tools/check_site.py .`
 
 - **Home page order:** most-searched first, from `tools/popularity.csv`, the Search Console export
-  (Performance → Pages → Export → CSV; use `Pages.csv` from the zip). Without it the home page is newest first
-  and the build prints a warning.
+  (Performance → Pages → Export → CSV; use `Pages.csv` from the zip). The CSV is git-ignored (the repo is public);
+  only the ranked slugs are published, in `assets/popular.json`, and later builds reuse that ranking when the CSV is absent.
 - **Ads:** every article has a right-column banner placeholder. The slot between the photo/details and the text
   is off by default: set `AD_INLINE_DEFAULT = True` (all posts) or list slugs in `AD_INLINE_SLUGS` in `tools/build.py`.
 - **Fonts:** self-hosted in `assets/fonts` (Bricolage Grotesque for titles, Spectral Light for text; OFL).

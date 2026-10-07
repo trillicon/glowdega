@@ -363,8 +363,14 @@ open(os.path.join(SITE, 'esthetician-directory.html'), 'w').write(page('', 'Esth
 
 # ---------- home: the 12 most-searched posts (Search Console clicks, then impressions), no dates ----------
 def popularity():
-    """Slugs from POPULARITY, most popular first. Missing file → [] and the home page falls back to newest first."""
+    """Slugs from POPULARITY, most popular first. The CSV stays local (git-ignored; the repo is public), so without it
+    the last ranking saved in assets/popular.json is reused; with neither, the home page falls back to newest first."""
     if not os.path.exists(POPULARITY):
+        saved = os.path.join(SITE, 'assets', 'popular.json')
+        if os.path.exists(saved):
+            ranked = [s for s in json.load(open(saved)) if s in SLUGS]
+            print(f'\npopularity: {POPULARITY} not found; reusing saved ranking of {len(ranked)} posts')
+            return ranked
         print(f'\nWARNING: {POPULARITY} not found; home page ordered newest first')
         return []
     score = {}
