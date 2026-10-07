@@ -12,8 +12,5 @@ export async function onRequestGet({ request, env }) {
   return new HTMLRewriter()
     .on('.post-grid', { element(el) { el.setInnerContent(homeCards(posts, popular), { html: true }); } })
     .on('.grid-head span', count())
-    .on('meta[name="description"]', {
-      element(el) { el.setAttribute('content', el.getAttribute('content').replace(/\d+ skincare posts/, `${posts.length} skincare posts`)); },
-    })
     .transform(new Response(page.body, { headers: htmlHeaders() }));
 }

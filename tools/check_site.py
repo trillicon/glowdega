@@ -33,6 +33,8 @@ WELCOME = ('GLOWDEGA® was an inclusive skin studio created by Hadiyah Daché in
            'be here just one click away!')
 check(re.search(r'<div class="hero-copy">(.*?)</div>', home, re.S).group(1) == ''.join(f'<p>{w}</p>' for w in WELCOME),
       'home: welcome text is not the approved copy')
+check(re.search(r'<meta name="description" content="([^"]*)"', home).group(1) == 'The Glowdega® archive by Hadiyah Daché.',
+      'home: search description is not the approved copy')
 check(grid.count('class="card"') == 12, 'home: expected 12 cards')
 check(not DATE.search(grid), 'home: cards show dates')
 check(len(DATE.findall(read('blog.html'))) >= 100, 'blog.html: archive cards lost their dates')
