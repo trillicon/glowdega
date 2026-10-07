@@ -1,0 +1,2 @@
+# glowdega
+Static site
