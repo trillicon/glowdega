@@ -254,11 +254,25 @@ os.makedirs(art_dir, exist_ok=True)
 for f in os.listdir(art_dir):
     if f.endswith('.html'): os.remove(os.path.join(art_dir, f))
 
-def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager, desc, root='../'):
+AUTHOR = 'Hadiyah Daché'
+
+def article_ld(title, desc, date_iso):
+    """schema.org BlogPosting for an article (functions/_lib/site.js builds the same shape for admin posts)."""
+    return {'@context': 'https://schema.org', '@type': 'BlogPosting', 'headline': title, 'description': desc,
+            'datePublished': date_iso, 'inLanguage': 'en-US',
+            'author': {'@type': 'Person', 'name': AUTHOR, 'jobTitle': 'Licensed Esthetician',
+                       'url': 'https://www.fairyglowmother.com/'},
+            'publisher': {'@type': 'Organization', 'name': 'GLOWDEGA®'}}
+
+def ld_json(data):
+    return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
+
+def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager, desc, root='../', jsonld=None):
     """Article page. `cats`, `body` and `pager` are HTML; everything else is plain text."""
     hero = (f'<figure class="article-image"><img src="{hero_src}" alt="" fetchpriority="high"></figure>'
             if hero_src else '')
-    side = (f'<aside class="side"><div class="side-label">Published</div><p>{date_txt}</p>'
+    side = (f'<aside class="side"><div class="side-label">Written by</div><p>{AUTHOR}, licensed esthetician</p>'
+            f'<div class="side-label">Published</div><p>{date_txt}</p>'
             + (f'<div class="side-label">Filed under</div><p>{cats}</p>' if cats else '')
             + f'<div class="side-label">Reading time</div><p>{minutes} min</p>'
             + f'<a href="{root}blog.html">← All articles</a><a href="{root}book.html">The Book →</a></aside>')
@@ -268,7 +282,8 @@ def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager
             f'{hero}<div class="article-layout"><div class="prose">{body}</div>{side}</div></article>'
             f'<section class="grid"><div class="grid-head"><span>Keep reading</span><a href="{root}blog.html">All articles →</a></div>'
             f'<div class="post-grid post-grid--pair">{pager}</div></section>')
-    head = f'<meta property="og:type" content="article"><meta property="article:published_time" content="{date_iso}">'
+    head = (f'<meta property="og:type" content="article"><meta property="article:published_time" content="{date_iso}">'
+            + (jsonld if jsonld is not None else ld_json(article_ld(title, desc, date_iso))))
     return page(root, f'{title} — GLOWDEGA®', desc, main, head)
 
 for i, p in enumerate(posts):
@@ -287,7 +302,8 @@ json.dump([dict(slug=p['slug'], title=p['title'], date=f"{p['date']:%Y-%m-%dT%H:
                 category=(p['cats'] or [''])[0], excerpt=p['excerpt']) for p in posts],
           open(os.path.join(SITE, 'assets', 'posts.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 open(os.path.join(SITE, 'assets', 'templates', 'article.html'), 'w').write(article_page(
-    '%%TITLE%%', '%%DATE_ISO%%', '%%DATE%%', '%%CATS%%', '%%MINUTES%%', '%%HERO%%', '%%BODY%%', '%%PAGER%%', '%%DESC%%')
+    '%%TITLE%%', '%%DATE_ISO%%', '%%DATE%%', '%%CATS%%', '%%MINUTES%%', '%%HERO%%', '%%BODY%%', '%%PAGER%%', '%%DESC%%',
+    jsonld='%%JSONLD%%')
     .replace('<figure class="article-image"><img src="%%HERO%%" alt="" fetchpriority="high"></figure>', '%%HERO_FIGURE%%')
     .replace('<div class="side-label">Filed under</div><p>%%CATS%%</p>', '%%SIDE_CATS%%')
     .replace('<span>%%CATS%%</span>', '%%META_CATS%%'))

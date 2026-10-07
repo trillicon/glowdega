@@ -47,12 +47,46 @@ export function renderMarkdown(md) {
     .replace(/<h1>/g, '<h2>').replace(/<\/h1>/g, '</h2>');           // the page title is the only h1
 }
 
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const decode = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) =>
+  e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : +e.slice(1)) : (ENTITIES[e.toLowerCase()] ?? m));
 export const plainText = (html) =>
-  html.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+  decode(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 
 export function excerptFrom(md) {
   const text = plainText(renderMarkdown(md));
   return text.length <= 220 ? text : text.slice(0, 220).replace(/\s+\S*$/, '').replace(/[,.;:—-]+$/, '') + '…';
+}
+
+// ---------- structured data (schema.org) ----------
+const AUTHOR = { '@type': 'Person', name: 'Hadiyah Daché', jobTitle: 'Licensed Esthetician', url: 'https://www.fairyglowmother.com/' };
+const stripMd = (md) => plainText(renderMarkdown(md));
+
+// "## FAQ" section with "### Question" headings → [{q, a}]
+export function faqFrom(md) {
+  const section = String(md ?? '').split(/^##\s+FAQ\s*$/m)[1];
+  if (!section) return [];
+  const body = section.split(/^##\s+/m)[0];
+  return body.split(/^###\s+/m).slice(1).map((chunk) => {
+    const [q, ...rest] = chunk.split('\n');
+    return { q: q.trim(), a: stripMd(rest.join('\n')) };
+  }).filter((x) => x.q && x.a);
+}
+
+export function jsonLd(post, dateIso) {
+  const ld = [{
+    '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.title,
+    description: post.excerpt || excerptFrom(post.body_md), datePublished: dateIso, inLanguage: 'en-US',
+    author: AUTHOR, publisher: { '@type': 'Organization', name: 'GLOWDEGA®' },
+    ...(post.category ? { articleSection: post.category } : {}),
+    ...(/^https:\/\//i.test(post.hero_image || '') ? { image: post.hero_image } : {}),
+  }];
+  const faq = faqFrom(post.body_md);
+  if (faq.length) {
+    ld.push({ '@context': 'https://schema.org', '@type': 'FAQPage',
+      mainEntity: faq.map(({ q, a }) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) });
+  }
+  return ld.map((x) => `<script type="application/ld+json">${JSON.stringify(x).replace(/</g, '\\u003c')}</script>`).join('');
 }
 
 // ---------- article page from assets/templates/article.html ----------
@@ -73,6 +107,7 @@ export function articlePage(template, post, { newer, older } = {}) {
       ? `<figure class="article-image"><img src="${esc(post.hero_image)}" alt="" fetchpriority="high"></figure>` : '',
     BODY: html,
     PAGER: pager,
+    JSONLD: jsonLd(post, isoDay(post.date)),
   };
   return template.replace(/%%([A-Z_]+)%%/g, (m, k) => (k in values ? values[k] : m));
 }
