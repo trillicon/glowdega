@@ -59,12 +59,17 @@ export function archiveMain(posts) {
     return `<section class="grid" id="y${y}"><div class="grid-head"><span>${y}</span><span>${ps.length} post${ps.length === 1 ? '' : 's'}</span></div>`
       + `<div class="post-grid">${ps.map((p) => card(p)).join('')}</div></section>`;
   }).join('');
-  return `<section class="page-shell"><div class="eyebrow">GLOWDEGA® / THE GAZETTE</div><h1>THE<br>ARCHIVE</h1>`
+  return `<section class="page-shell"><div class="eyebrow">GLOWDEGA® / THE ARCHIVE</div><h1>THE GLOW<br>GAZETTE</h1>`
     + `<p class="archive-count">${posts.length} articles, newest first.</p>`
     + `<nav class="archive-nav" aria-label="Jump to year">${nav}</nav></section>${groups}`;
 }
 
-export const homeCards = (posts) => posts.slice(0, 12).map((p) => card(p)).join('');
+// Home: most-searched first (assets/popular.json, from tools/build.py), the rest newest first; no dates.
+export function homeCards(posts, popular = []) {
+  const rank = new Map(popular.map((slug, i) => [slug, i]));
+  const r = (p) => rank.get(p.slug) ?? rank.size;
+  return [...posts].sort((a, b) => r(a) - r(b)).slice(0, 12).map((p) => card(p, { dated: false })).join('');
+}
 
 export async function notFound(env, request) {
   const res = await asset(env, request, '/404.html');

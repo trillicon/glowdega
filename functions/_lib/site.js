@@ -23,8 +23,8 @@ export const fdate = (iso) => { const { y, m, d } = dateParts(iso); return `${MO
 export const isoDay = (iso) => { const { y, m, d } = dateParts(iso); return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; };
 export const year = (iso) => dateParts(iso).y;
 
-export function card(p, label = '') {
-  const meta = (label ? label + ' • ' : '') + fdate(p.date) + (p.category ? ' • ' + esc(p.category) : '');
+export function card(p, { dated = true } = {}) {
+  const meta = [dated && fdate(p.date), p.category && esc(p.category)].filter(Boolean).join(' • ');
   return `<a class="card" href="/blog/${esc(p.slug)}"><div><div class="meta">${meta}</div>`
     + `<h2>${esc(p.title)}</h2></div><div class="excerpt">${esc(p.excerpt)}</div></a>`;
 }
@@ -89,24 +89,33 @@ export function jsonLd(post, dateIso) {
   return ld.map((x) => `<script type="application/ld+json">${JSON.stringify(x).replace(/</g, '\\u003c')}</script>`).join('');
 }
 
+// Keep reading: same category first, then nearest in time (tools/build.py also weighs tags, which D1 posts lack).
+export const RELATED = 4;
+export function relatedPosts(post, posts) {
+  const t = (p) => Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(p.date) ? p.date : p.date + 'Z');
+  const at = t(post);
+  return posts.filter((p) => p.slug !== post.slug)
+    .map((p) => ({ p, same: post.category && p.category === post.category ? 0 : 1, gap: Math.abs(t(p) - at) }))
+    .sort((a, b) => a.same - b.same || a.gap - b.gap)
+    .slice(0, RELATED).map((x) => x.p);
+}
+
 // ---------- article page from assets/templates/article.html ----------
-export function articlePage(template, post, { newer, older } = {}) {
+export function articlePage(template, post, related = []) {
   const html = renderMarkdown(post.body_md);
   const minutes = Math.max(1, Math.round(plainText(html).split(' ').length / 225));
   const cats = post.category ? esc(post.category) : '';
-  const pager = [newer && card(newer, 'Newer'), older && card(older, 'Older')].filter(Boolean).join('');
   const values = {
     TITLE: esc(post.title),
     DESC: esc(post.excerpt || excerptFrom(post.body_md)),
     DATE_ISO: isoDay(post.date),
     DATE: fdate(post.date),
     MINUTES: String(minutes),
-    META_CATS: cats ? `<span>${cats}</span>` : '',
     SIDE_CATS: cats ? `<div class="side-label">Filed under</div><p>${cats}</p>` : '',
     HERO_FIGURE: /^(https:\/\/|\/assets\/img\/)/i.test(post.hero_image || '')
       ? `<figure class="article-image"><img src="${esc(post.hero_image)}" alt="" fetchpriority="high"></figure>` : '',
     BODY: html,
-    PAGER: pager,
+    PAGER: related.map((p) => card(p)).join(''),
     JSONLD: jsonLd(post, isoDay(post.date)),
   };
   return template.replace(/%%([A-Z_]+)%%/g, (m, k) => (k in values ? values[k] : m));

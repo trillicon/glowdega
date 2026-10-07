@@ -2,7 +2,7 @@
 
 usage: python3 -I tools/build.py <export.xml> .
 """
-import hashlib, html, json, os, re, sys, urllib.request, xml.etree.ElementTree as ET
+import csv, hashlib, html, json, os, re, sys, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime
 from html.parser import HTMLParser
 
@@ -11,6 +11,12 @@ NS = {'wp': 'http://wordpress.org/export/1.2/', 'content': 'http://purl.org/rss/
 IMG_DIR = os.path.join(SITE, 'assets', 'img')
 CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'img_cache.json')
 os.makedirs(IMG_DIR, exist_ok=True)
+
+# Search Console export (Performance → Pages → Export → CSV, the Pages.csv inside the zip). Orders the home page.
+POPULARITY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'popularity.csv')
+# Every article has a banner placeholder in the right column. The slot between photo/meta and text is optional:
+AD_INLINE_DEFAULT = False   # True: on every article (and on posts published from /admin)
+AD_INLINE_SLUGS = set()     # or only on these archive slugs
 
 items = ET.parse(XML).getroot().find('channel').findall('item')
 by_id = {i.findtext('wp:post_id', namespaces=NS): i for i in items}
@@ -233,18 +239,25 @@ def page(root, title, desc, main, extra_head=''):
             f'<title>{esc(title)}</title><meta name="description" content="{esc(desc)}">'
             f'<meta property="og:title" content="{esc(title)}"><meta property="og:description" content="{esc(desc)}">'
             f'<meta property="og:site_name" content="GLOWDEGA®">{extra_head}'
+            f'<link rel="preload" href="{root}assets/fonts/BricolageGrotesque.woff2" as="font" type="font/woff2" crossorigin>'
             f'<link rel="stylesheet" href="{root}assets/style.css"></head><body><div class="site">'
             f'<div class="bookbar"><a href="{root}book.html">NEW BOOK • PRE-ORDER / BOOK UPDATES →</a></div>'
-            f'<header><a class="logo" href="{root}index.html">GLOWDEGA®</a><nav class="nav">'
-            f'<a href="{root}blog.html">Gazette</a><a href="{root}book.html">The Book</a>'
-            '<a href="https://www.fairyglowmother.com/">Hadiyah</a></nav><div class="right">Oakland, CA</div></header>'
-            f'<main>{main}</main>'
-            f'<footer><div>GLOWDEGA®<br>Oakland, California</div><div><a href="{root}blog.html">Gazette Archive</a>'
-            f'<a href="{root}book.html">The Book</a></div><div><a href="https://www.fairyglowmother.com/">Fairy Glow Mother</a>'
-            f'<a href="{root}privacy.html">Privacy</a></div></footer></div></body></html>\n')
+            f'{header(root)}<main>{main}</main>{footer(root)}</div></body></html>\n')
 
-def card(p, root=''):
-    meta = fdate(p['date']) + (' • ' + esc(p['cats'][0]) if p['cats'] else '')
+# Header and footer for every page; static pages (index, book, policies, pages/*) are synced at the end of the build.
+def header(root):
+    return (f'<header><a class="logo" href="{root}index.html">GLOWDEGA®</a><nav class="nav">'
+            f'<a href="{root}blog.html">The Glow Gazette</a><a href="https://www.fairyglowmother.com/">About Hadiyah</a>'
+            f'<a href="{root}esthetician-directory.html">Esthetician Directory</a></nav>'
+            f'<div class="right"><a class="book-pill" href="{root}book.html">GET THE BOOK</a></div></header>')
+
+def footer(root):
+    return (f'<footer><div>GLOWDEGA®<br>Oakland, California</div><div><a href="{root}blog.html">The Glow Gazette</a>'
+            f'<a href="{root}book.html">The Book</a></div><div><a href="https://www.fairyglowmother.com/">Fairy Glow Mother</a>'
+            f'<a href="{root}privacy.html">Privacy</a></div></footer>')
+
+def card(p, root='', dated=True):
+    meta = ' • '.join(([fdate(p['date'])] if dated else []) + [esc(c) for c in p['cats'][:1]])
     return (f'<a class="card" href="/blog/{p["slug"]}"><div><div class="meta">{meta}</div>'
             f'<h2>{esc(p["title"])}</h2></div><div class="excerpt">{esc(p["excerpt"])}</div></a>')
 
@@ -267,34 +280,48 @@ def article_ld(title, desc, date_iso):
 def ld_json(data):
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
 
-def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager, desc, root='../', jsonld=None):
-    """Article page. `cats`, `body` and `pager` are HTML; everything else is plain text."""
+AD_RAIL = ('<aside class="ad-rail" aria-label="Advertisement"><div class="ad-slot ad-slot--rail">'
+           '<span>Advertisement</span><small>300 × 600</small></div></aside>')
+AD_INLINE = ('<div class="ad-slot ad-slot--inline" aria-label="Advertisement">'
+             '<span>Advertisement</span><small>728 × 90</small></div>')
+
+def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager, desc, root='../', jsonld=None,
+                 inline_ad=False):
+    """Article page. `cats`, `body` and `pager` (the related-post cards) are HTML; everything else is plain text."""
     hero = (f'<figure class="article-image"><img src="{hero_src}" alt="" fetchpriority="high"></figure>'
             if hero_src else '')
-    side = (f'<aside class="side"><div class="side-label">Written by</div><p>{AUTHOR}, licensed esthetician</p>'
-            f'<div class="side-label">Published</div><p>{date_txt}</p>'
+    info = (f'<div class="article-info"><div class="side-label">Written by</div><p>{AUTHOR}, licensed esthetician</p>'
+            f'<div class="side-label">Published</div><p><time datetime="{date_iso}">{date_txt}</time></p>'
             + (f'<div class="side-label">Filed under</div><p>{cats}</p>' if cats else '')
             + f'<div class="side-label">Reading time</div><p>{minutes} min</p>'
-            + f'<a href="{root}blog.html">← All articles</a><a href="{root}book.html">The Book →</a></aside>')
-    main = (f'<article><div class="article-hero"><div class="eyebrow"><a href="{root}blog.html">GLOWDEGA® / THE GAZETTE</a></div>'
-            f'<h1>{esc(title)}</h1><div class="article-meta"><time datetime="{date_iso}">{date_txt}</time>'
-            + (f'<span>{cats}</span>' if cats else '') + f'<span>{minutes} min read</span></div></div>'
-            f'{hero}<div class="article-layout"><div class="prose">{body}</div>{side}</div></article>'
+            + f'<a href="{root}blog.html">← All articles</a><a href="{root}book.html">The Book →</a></div>')
+    main = (f'<article><div class="article-hero"><div class="eyebrow"><a href="{root}blog.html">GLOWDEGA® / THE GLOW GAZETTE</a></div>'
+            f'<h1>{esc(title)}</h1></div>'
+            f'<div class="article-top">{hero}{info}</div><hr class="article-rule">'
+            + (AD_INLINE if inline_ad else '')
+            + f'<div class="article-layout"><div class="prose">{body}</div>{AD_RAIL}</div></article>'
             f'<section class="grid"><div class="grid-head"><span>Keep reading</span><a href="{root}blog.html">All articles →</a></div>'
-            f'<div class="post-grid post-grid--pair">{pager}</div></section>')
+            f'<div class="post-grid post-grid--four">{pager}</div></section>')
     head = (f'<meta property="og:type" content="article"><meta property="article:published_time" content="{date_iso}">'
             + (jsonld if jsonld is not None else ld_json(article_ld(title, desc, date_iso))))
     return page(root, f'{title} — GLOWDEGA®', desc, main, head)
 
-for i, p in enumerate(posts):
+RELATED = 4
+
+def related(p):
+    """The RELATED posts sharing the most categories (weighted) and tags with p; ties go to the nearest in time."""
+    cats, tags = set(p['cats']), set(p['tags'])
+    others = [q for q in posts if q is not p]
+    return sorted(others, key=lambda q: (-(3 * len(cats & set(q['cats'])) + len(tags & set(q['tags']))),
+                                         abs((q['date'] - p['date']).total_seconds())))[:RELATED]
+
+for p in posts:
     root = '../'
-    newer = posts[i - 1] if i > 0 else None
-    older = posts[i + 1] if i + 1 < len(posts) else None
-    pager = ''.join(card(q, root).replace('<div class="meta">', f'<div class="meta">{label} • ', 1)
-                    for label, q in (('Newer', newer), ('Older', older)) if q)
+    pager = ''.join(card(q, root) for q in related(p))
     open(os.path.join(art_dir, p['slug'] + '.html'), 'w').write(article_page(
         p['title'], f"{p['date']:%Y-%m-%d}", fdate(p['date']), ' • '.join(esc(c) for c in p['cats']), p['minutes'],
-        root + p['hero'] if p['hero'] else None, p['body'].replace('{root}', root), pager, p['excerpt']))
+        root + p['hero'] if p['hero'] else None, p['body'].replace('{root}', root), pager, p['excerpt'],
+        inline_ad=AD_INLINE_DEFAULT or p['slug'] in AD_INLINE_SLUGS))
 
 # ---------- data + template for posts published from the admin (functions/) ----------
 os.makedirs(os.path.join(SITE, 'assets', 'templates'), exist_ok=True)
@@ -303,10 +330,9 @@ json.dump([dict(slug=p['slug'], title=p['title'], date=f"{p['date']:%Y-%m-%dT%H:
           open(os.path.join(SITE, 'assets', 'posts.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 open(os.path.join(SITE, 'assets', 'templates', 'article.html'), 'w').write(article_page(
     '%%TITLE%%', '%%DATE_ISO%%', '%%DATE%%', '%%CATS%%', '%%MINUTES%%', '%%HERO%%', '%%BODY%%', '%%PAGER%%', '%%DESC%%',
-    jsonld='%%JSONLD%%')
+    jsonld='%%JSONLD%%', inline_ad=AD_INLINE_DEFAULT)
     .replace('<figure class="article-image"><img src="%%HERO%%" alt="" fetchpriority="high"></figure>', '%%HERO_FIGURE%%')
-    .replace('<div class="side-label">Filed under</div><p>%%CATS%%</p>', '%%SIDE_CATS%%')
-    .replace('<span>%%CATS%%</span>', '%%META_CATS%%'))
+    .replace('<div class="side-label">Filed under</div><p>%%CATS%%</p>', '%%SIDE_CATS%%'))
 
 # ---------- blog index (newest first, grouped by year) ----------
 years = sorted({p['date'].year for p in posts}, reverse=True)
@@ -315,24 +341,62 @@ groups = ''.join(
     f'<section class="grid" id="y{y}"><div class="grid-head"><span>{y}</span><span>{sum(1 for p in posts if p["date"].year == y)} posts</span></div>'
     f'<div class="post-grid">' + ''.join(card(p) for p in posts if p['date'].year == y) + '</div></section>'
     for y in years)
-main = (f'<section class="page-shell"><div class="eyebrow">GLOWDEGA® / THE GAZETTE</div><h1>THE<br>ARCHIVE</h1>'
+main = (f'<section class="page-shell"><div class="eyebrow">GLOWDEGA® / THE ARCHIVE</div><h1>THE GLOW<br>GAZETTE</h1>'
         f'<p class="archive-count">{len(posts)} articles, newest first.</p><nav class="archive-nav" aria-label="Jump to year">{nav}</nav></section>{groups}')
 open(os.path.join(SITE, 'blog.html'), 'w').write(
-    page('', 'The Gazette — GLOWDEGA®', f'The GLOWDEGA® Gazette archive: {len(posts)} articles on skin care, acne, ingredients, and studio life.', main))
+    page('', 'The Glow Gazette — GLOWDEGA®', f'The Glow Gazette archive: {len(posts)} articles on skin care, acne, ingredients, and studio life.', main))
 
 # ---------- 404 (also stops Pages serving the home page for unknown URLs) ----------
 open(os.path.join(SITE, '404.html'), 'w').write(page('/', 'Page not found — GLOWDEGA®', 'This page does not exist.',
     '<section class="page-shell"><div class="eyebrow">GLOWDEGA® / 404</div><h1>NOT<br>FOUND</h1>'
     '<div class="page-copy"><p>This page doesn’t exist, or it has moved.</p></div>'
-    '<p><a class="cta" href="/blog">Browse the Gazette →</a></p></section>'))
+    '<p><a class="cta" href="/blog">Browse The Glow Gazette →</a></p></section>'))
 
-# ---------- home: replace the post grid with the 12 newest ----------
+# ---------- esthetician directory (placeholder until it launches) ----------
+open(os.path.join(SITE, 'esthetician-directory.html'), 'w').write(page('', 'Esthetician Directory — GLOWDEGA®',
+    'A directory of licensed estheticians, from GLOWDEGA®. Coming soon.',
+    '<section class="page-shell"><div class="eyebrow">GLOWDEGA® / DIRECTORY</div><h1>ESTHETICIAN<br>DIRECTORY</h1>'
+    '<p><span class="soon-pill">Coming soon</span></p>'
+    '<div class="page-copy"><p>A directory of licensed estheticians is on the way. Check back soon.</p></div>'
+    '<p><a class="cta" href="/blog">Read The Glow Gazette →</a></p></section>',
+    '<meta name="robots" content="noindex">'))
+
+# ---------- home: the 12 most-searched posts (Search Console clicks, then impressions), no dates ----------
+def popularity():
+    """Slugs from POPULARITY, most popular first. Missing file → [] and the home page falls back to newest first."""
+    if not os.path.exists(POPULARITY):
+        print(f'\nWARNING: {POPULARITY} not found; home page ordered newest first')
+        return []
+    score = {}
+    for r in csv.DictReader(open(POPULARITY, encoding='utf-8-sig')):
+        m = re.search(r'/(?:blog|fairy-glow-mother)/([^/?#]+)', r.get('Top pages') or r.get('Page') or '')
+        if not m or m.group(1) not in SLUGS: continue
+        num = lambda k: float((r.get(k) or '0').replace(',', ''))
+        c, i = score.get(m.group(1), (0, 0))
+        score[m.group(1)] = (c + num('Clicks'), i + num('Impressions'))
+    ranked = sorted(score, key=lambda s: score[s], reverse=True)
+    print(f'\npopularity: {len(ranked)} of {len(posts)} posts ranked from {os.path.basename(POPULARITY)}')
+    return ranked
+
+ranked = popularity()
+rank = {s: i for i, s in enumerate(ranked)}
+by_popularity = sorted(posts, key=lambda p: rank.get(p['slug'], len(rank)))  # unranked keep newest-first order
+json.dump(ranked, open(os.path.join(SITE, 'assets', 'popular.json'), 'w'))
 idx_path = os.path.join(SITE, 'index.html')
 idx = open(idx_path).read()
 start = idx.index('<div class="post-grid">')
 end = idx.index('<p style="margin-top:24px">', start)
-idx = idx[:start] + '<div class="post-grid">' + ''.join(card(p) for p in posts[:12]) + '</div>' + idx[end:]
+idx = idx[:start] + '<div class="post-grid">' + ''.join(card(p, dated=False) for p in by_popularity[:12]) + '</div>' + idx[end:]
 idx = re.sub(r'(\d+)( published posts| POSTS)', lambda m: f'{len(posts)}{m.group(2)}', idx)
 open(idx_path, 'w').write(idx)
+
+# ---------- static pages share the generated header and footer ----------
+for root, names in (('', ['index', 'book', 'policies', 'privacy', 'tos']), ('../', [f'pages/{n}' for n in sorted(PAGES)])):
+    for n in names:
+        path = os.path.join(SITE, n + '.html')
+        doc = open(path).read()
+        doc = re.sub(r'<header>.*?</header>', lambda m: header(root), doc, count=1, flags=re.S)
+        doc = re.sub(r'<footer>.*?</footer>', lambda m: footer(root), doc, count=1, flags=re.S)
+        open(path, 'w').write(doc)
 
 print(f'\nbuilt {len(posts)} articles; {sum(1 for v in cache.values() if v)} images saved, {sum(1 for v in cache.values() if not v)} dead')
