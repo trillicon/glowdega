@@ -53,6 +53,8 @@ for p in [p for p in pages if p.startswith('blog' + os.sep)]:
                     r'<div class="prose">', doc, re.S), f'{p}: text does not start under the separator')
     check('class="ad-rail"' in doc, f'{p}: right column is not the ad placeholder')
 
+check('href="/cdn-cgi/access/logout"' in read('admin/index.html'), 'admin: no Log out link')
+
 css = read('assets/style.css')
 for font in re.findall(r'url\((fonts/[^)]+)\)', css):
     check(os.path.exists(os.path.join(SITE, 'assets', font)), f'style.css: missing {font}')
