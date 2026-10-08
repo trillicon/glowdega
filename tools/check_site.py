@@ -12,8 +12,9 @@ def check(ok, msg):
     if not ok: fails.append(msg)
 
 pages = [os.path.relpath(p, SITE) for p in glob.glob(os.path.join(SITE, '*.html'))
-         + glob.glob(os.path.join(SITE, 'pages', '*.html')) + glob.glob(os.path.join(SITE, 'blog', '*.html'))]
-NAV = ['The Glow Gazette', 'About Hadiyah', 'Esthetician Directory']
+         + glob.glob(os.path.join(SITE, 'pages', '*.html')) + glob.glob(os.path.join(SITE, 'blog', '*.html'))
+         + glob.glob(os.path.join(SITE, 'resources', 'index.html')) + glob.glob(os.path.join(SITE, 'resources', '*', 'index.html'))]
+NAV = ['The Glow Gazette', 'About Hadiyah', 'Esthetician Directory', 'Resources']
 DATE = re.compile(r'class="meta">[A-Z][a-z]{2} \d{1,2}, \d{4}')
 
 for p in pages:
@@ -22,8 +23,9 @@ for p in pages:
           re.findall(r'>([^<]+)</a>', re.search(r'<nav class="nav">(.*?)</nav>', head.group(0)).group(1)) == NAV,
           f'{p}: header nav is not {NAV}')
     foot = re.search(r'<footer>.*?</footer>', read(p), re.S)
-    check(foot and re.search(r'<a href="(\.\./|/)?affiliate-disclosure\.html">Affiliate Disclosure</a>', foot.group(0)),
+    check(foot and re.search(r'<a href="(/|(\.\./)*)affiliate-disclosure\.html">Affiliate Disclosure</a>', foot.group(0)),
           f'{p}: footer lacks the Affiliate Disclosure link')
+    check(foot and re.search(r'<a href="(/|(\.\./)*)resources/">Resources</a>', foot.group(0)), f'{p}: footer lacks the Resources link')
     check(head and 'class="book-pill"' in head.group(0) and 'GET THE BOOK' in head.group(0) and 'Oakland' not in head.group(0),
           f'{p}: header lacks the GET THE BOOK pill')
 
@@ -113,6 +115,27 @@ for name, value in (('HOUSE_RAIL', HOUSE_RAIL), ('HOUSE_INLINE', HOUSE_INLINE), 
     check(f"{name} = '{value}'" in site_js.replace("'\n  + '", ''), f'site.js: {name} differs from the archive pages')
 
 check('href="/cdn-cgi/access/logout"' in read('admin/index.html'), 'admin: no Log out link')
+
+# Resources: the hub plus the five Sprint-1 calculators (tools/resources_site.py). No ads on these pages.
+CALCS = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even']
+res = ['resources/index.html'] + [f'resources/{c}/index.html' for c in CALCS]
+check(sorted(p for p in pages if p.startswith('resources')) == sorted(res), f'resources: expected exactly {res}')
+for p in res:
+    if not os.path.exists(os.path.join(SITE, p)): continue
+    doc = read(p)
+    check('ad-slot' not in doc and 'data-ad-' not in doc, f'{p}: calculator pages carry no ad slots')
+    check(doc.count('<h1') == 1, f'{p}: expected exactly one <h1>')
+    check(re.search(r'<title>[^<]+ \| GLOWDEGA</title>', doc), f'{p}: title is not "… | GLOWDEGA"')
+    lds = [json.loads(m) for m in re.findall(r'<script type="application/ld\+json">(.*?)</script>', doc, re.S)]
+    types = {n['@type'] for ld in lds for n in ld.get('@graph', [ld])}
+    want = {'CollectionPage', 'BreadcrumbList'} if p == 'resources/index.html' else {'WebPage', 'WebApplication', 'BreadcrumbList'}
+    check(want <= types, f'{p}: JSON-LD lacks {want - types}')
+    if p != 'resources/index.html':
+        check('aria-live="polite"' in doc and 'mailto:book@fairyglowmother.com' in doc and 'not tax, accounting, or legal advice' in doc,
+              f'{p}: missing live results region, coaching link or disclaimer')
+hub = read('resources/index.html') if os.path.exists(os.path.join(SITE, 'resources/index.html')) else ''
+check(all(f'href="{c}/"' in hub for c in CALCS), 'resources hub: a live calculator is not linked')
+check(hub.count('class="hub-card is-soon"') == 5 and not re.search(r'<a [^>]*is-soon', hub), 'resources hub: expected 5 unlinked coming-soon calculators')
 
 css = read('assets/style.css')
 for font in re.findall(r'url\((fonts/[^)]+)\)', css):

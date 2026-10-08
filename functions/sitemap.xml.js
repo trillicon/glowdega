@@ -1,6 +1,10 @@
-// /sitemap.xml: home, the Gazette, the book page, the affiliate disclosure and every post (archive + published from /admin).
+// /sitemap.xml: home, the Gazette, the book page, the affiliate disclosure, the calculators and every post (archive + published from /admin).
 import { allPosts } from './_lib/posts.js';
 import { esc, isoDay } from './_lib/site.js';
+
+// The beauty business calculators (static pages built by tools/build.py; tests/calc-pages.test.mjs keeps this in step).
+export const RESOURCES = ['/resources/', '/resources/service-pricing/', '/resources/hourly-rate/', '/resources/service-cost/',
+  '/resources/service-profitability/', '/resources/break-even/'];
 
 export async function onRequestGet({ request, env }) {
   const origin = new URL(request.url).origin;
@@ -9,6 +13,7 @@ export async function onRequestGet({ request, env }) {
   const newest = posts.length ? isoDay(posts[0].date) : '';
   const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
     + url('/', newest) + url('/blog', newest) + url('/book') + url('/affiliate-disclosure')
+    + RESOURCES.map((path) => url(path)).join('')
     + posts.map((p) => url(`/blog/${p.slug}`, isoDay(p.date))).join('')
     + '</urlset>\n';
   return new Response(xml, { headers: { 'content-type': 'application/xml; charset=utf-8', 'cache-control': 'public, max-age=300' } });

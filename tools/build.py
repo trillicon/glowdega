@@ -297,12 +297,12 @@ def page(root, title, desc, main, extra_head=''):
 def header(root):
     return (f'<header><a class="logo" href="{root}index.html">GLOWDEGA®</a><nav class="nav">'
             f'<a href="{root}blog.html">The Glow Gazette</a><a href="https://www.fairyglowmother.com/">About Hadiyah</a>'
-            f'<a href="{root}esthetician-directory.html">Esthetician Directory</a></nav>'
+            f'<a href="{root}esthetician-directory.html">Esthetician Directory</a><a href="{root}resources/">Resources</a></nav>'
             f'<div class="right"><a class="book-pill" href="{root}book.html">GET THE BOOK</a></div></header>')
 
 def footer(root):
     return (f'<footer><div>GLOWDEGA®<br>Oakland, California</div><div><a href="{root}blog.html">The Glow Gazette</a>'
-            f'<a href="{root}book.html">The Book</a></div><div><a href="https://www.fairyglowmother.com/">Fairy Glow Mother</a>'
+            f'<a href="{root}book.html">The Book</a><a href="{root}resources/">Resources</a></div><div><a href="https://www.fairyglowmother.com/">Fairy Glow Mother</a>'
             f'<a href="{root}privacy.html">Privacy</a><a href="{root}affiliate-disclosure.html">Affiliate Disclosure</a></div></footer>')
 
 def card(p, root='', dated=True):
@@ -495,6 +495,14 @@ for root, names in (('', ['index', 'book', 'policies', 'privacy', 'tos']), ('../
         doc = re.sub(r'<header>.*?</header>', lambda m: header(root), doc, count=1, flags=re.S)
         doc = re.sub(r'<footer>.*?</footer>', lambda m: footer(root), doc, count=1, flags=re.S)
         open(path, 'w').write(doc)
+
+# ---------- /resources/: beauty business calculators (tools/resources_site.py; engine in assets/calc/core) ----------
+# Loaded by path because `python3 -I` leaves the script's folder off sys.path.
+import importlib.util
+_spec = importlib.util.spec_from_file_location('resources_site', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources_site.py'))
+resources_site = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(resources_site)
+print('resources: ' + ', '.join(resources_site.build(SITE, page, ld_json)))
 
 # ---------- stylesheet version ----------
 # Browsers keep assets/style.css for hours, so every page links it as style.css?v=<content hash>: a CSS change gives

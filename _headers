@@ -1,0 +1,3 @@
+# The calculator scripts import each other without a version in the URL, so browsers revalidate them on every load.
+/assets/calc/*
+  Cache-Control: no-cache
