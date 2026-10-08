@@ -3,9 +3,7 @@
 // No financial formulas live here.
 import { parseNumber, hasBadNumber } from '../core/validation.js';
 import { shareResults, wireSharePanel, emailHref } from './share.js';
-
-const AUDIENCE_KEY = 'glowdega.audience';
-const TYPES = ['solo', 'employee', 'owner'];
+import { PROFESSIONS, PROFESSION_KEY, TYPE_KEY as AUDIENCE_KEY, TYPES, professionOf, signatureService, savedChoice, saveChoice } from './professions.js';
 
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -14,12 +12,8 @@ const el = (tag, cls, text) => {
   return n;
 };
 
-function savedAudience() {
-  try { return localStorage.getItem(AUDIENCE_KEY); } catch { return null; }
-}
-function saveAudience(type) {
-  try { localStorage.setItem(AUDIENCE_KEY, type); } catch { /* storage blocked: nothing to remember */ }
-}
+const savedAudience = () => savedChoice(AUDIENCE_KEY);
+const saveAudience = (type) => saveChoice(AUDIENCE_KEY, type);
 
 function ruleOf(input) {
   const d = input.dataset;
@@ -33,9 +27,14 @@ function ruleOf(input) {
 /** Text of a view must never show NaN, Infinity or undefined. */
 const badText = (s) => /NaN|Infinity|undefined/.test(s);
 
+/**
+ * Mounts the calculator on the page and returns its config. Outside a browser (the Node tests import the calculator
+ * modules to run their compute() directly) there is no document, so it only returns the config.
+ */
 export function mountCalculator(config) {
+  if (typeof document === 'undefined') return config;
   const root = document.querySelector('[data-calc]');
-  if (!root) return;
+  if (!root) return config;
   const form = root.querySelector('.calc-form');
   const output = root.querySelector('.calc-output');
   const actions = root.querySelector('.calc-actions');
@@ -84,6 +83,23 @@ export function mountCalculator(config) {
     radios.forEach((r) => r.addEventListener('change', () => { saveAudience(r.value); applyType(r.value); }));
     applyType(typeOf());
   }
+  // ---------- profession: wording only (example services in hints, insights and share text); never the numbers ----------
+  const profSelect = form.querySelector('select[name="profession"]');
+  const professionNow = () => professionOf(profSelect?.value);
+  function applyProfession() {
+    const sig = signatureService(professionNow());
+    for (const n of root.querySelectorAll('[data-prof]')) {
+      const k = n.dataset.prof;
+      n.textContent = k === 'signature' ? sig.text : k === 'signature-minutes' ? String(sig.minutes) : k === 'signature-name' ? sig.name : PROFESSIONS[professionNow()].label;
+    }
+  }
+  if (profSelect) {
+    const wanted = [params.get('profession'), savedChoice(PROFESSION_KEY)].find((p) => Object.hasOwn(PROFESSIONS, p || ''));
+    if (wanted) profSelect.value = wanted;
+    profSelect.addEventListener('change', () => { saveChoice(PROFESSION_KEY, profSelect.value); applyProfession(); if (calculated) run(false); });
+    applyProfession();
+  }
+
   // a choice other fields depend on (data-when) re-applies visibility and recalculates
   form.addEventListener('change', (e) => {
     const n = e.target.name;
@@ -141,7 +157,9 @@ export function mountCalculator(config) {
       grid.append(...view.cards.map(card));
       nodes.push(grid);
     }
-    if (view.extraNode) nodes.push(view.extraNode);
+    // extraNode is built lazily (it needs the DOM), so compute() stays runnable outside a browser
+    const extra = typeof view.extraNode === 'function' ? view.extraNode() : view.extraNode;
+    if (extra) nodes.push(extra);
     if (view.cta) {
       const p = el('p', 'calc-next');
       const a = el('a', 'cta', view.cta.text);
@@ -167,6 +185,7 @@ export function mountCalculator(config) {
     const dl = el('dl');
     const type = radios.find((r) => r.checked);
     if (type) dl.append(el('dt', '', 'You are'), el('dd', '', type.closest('label').textContent.trim()));
+    if (profSelect) dl.append(el('dt', '', 'License'), el('dd', '', PROFESSIONS[professionNow()].label));
     for (const input of fieldInputs()) {
       if (!input.value.trim()) continue;
       const label = form.querySelector(`label[for="${input.id}"] .calc-label`)?.textContent || input.name;
@@ -183,12 +202,12 @@ export function mountCalculator(config) {
     const { values, errors } = read();
     let first = markErrors(errors);
     if (!first) {
-      const res = config.compute({ values, type: typeOf(), root });
+      const res = config.compute({ values, type: typeOf(), root, profession: professionNow() });
       if (!res.ok) {
         first = markErrors(res.errors);
         if (!first) { clearResult(Object.values(res.errors)[0]); return false; }
       } else {
-        const text = JSON.stringify(res.view, (k, v) => (k === 'extraNode' ? undefined : v));
+        const text = JSON.stringify(res.view);
         if (badText(text) || (res.raw && hasBadNumber(res.raw))) {
           clearResult('Something in these numbers can’t be calculated. Check your inputs and try again.');
           return false;

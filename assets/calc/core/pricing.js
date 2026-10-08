@@ -20,22 +20,28 @@ const EPS = 1e-9;
  *   load factor     = 1 + non-client hours / client hours (each client hour also pays for admin, cleaning, content…)
  *   rent share      = monthly rent / hours worked per month × service hours        (allocateRent)
  *   overhead        = (other monthly fixed + monthly variable expenses) / monthly appointments   (rent is not in here)
- *   break-even      = (product + rent share + overhead) / (1 − processing)           covers costs, pays you $0
- *   recommended P   = (product + rent share + overhead + time value) / (1 − processing − margin)
- * The last line solves P = cost + P × processing + P × margin without a circular fee calculation.
+ *   commission      = price × commission rate        (owners who pay the provider a share of each service)
+ *   labor           = time value + commission
+ *   break-even      = (product + rent share + overhead) / (1 − processing)           covers costs, pays labor $0
+ *   recommended P   = (product + rent share + overhead + time value) / (1 − processing − commission − margin)
+ * The last line solves P = cost + P × (processing + commission + margin) without a circular fee calculation, so
+ * processing + commission + margin must stay below 100% of the price.
+ * targetHourly is the hourly labor rate: a solo provider's own pay per hour, or the wage an owner pays the provider.
+ * A solo provider's labor is only this hourly pay; there is no separate monthly pay here, so it is never counted twice.
  * The margin is at least MIN_PROFIT_MARGIN (30%) and defaults to it.
  */
 export function calculateServicePricing({
   currentPrice = 0, durationMinutes, productCost = 0, targetHourly = 0,
   monthlyRent = 0, hoursPerMonth = DEFAULT_HOURS_PER_MONTH,
   monthlyFixed = 0, monthlyVariable = 0, monthlyAppointments = 0,
-  processingRate = 0, profitMargin = MIN_PROFIT_MARGIN, nonClientHoursPerMonth = 0,
+  processingRate = 0, profitMargin = MIN_PROFIT_MARGIN, nonClientHoursPerMonth = 0, commissionRate = 0,
 }) {
   const errors = guard([
     ['durationMinutes', durationMinutes, (v) => v > 0, 'Enter a service duration greater than 0 minutes.'],
     ['currentPrice', currentPrice, (v) => v >= 0, 'Enter a current price of $0 or more.'],
     ['productCost', productCost, (v) => v >= 0, 'Enter a product/supply cost of $0 or more.'],
-    ['targetHourly', targetHourly, (v) => v >= 0, 'Enter target hourly earnings of $0 or more.'],
+    ['targetHourly', targetHourly, (v) => v >= 0, 'Enter an hourly pay or wage of $0 or more.'],
+    ['commissionRate', commissionRate, (v) => v >= 0 && v < 1, 'Enter a commission below 100%.'],
     ['monthlyFixed', monthlyFixed, (v) => v >= 0, 'Enter monthly fixed expenses of $0 or more.'],
     ['monthlyVariable', monthlyVariable, (v) => v >= 0, 'Enter monthly variable expenses of $0 or more.'],
     ['monthlyAppointments', monthlyAppointments, (v) => v >= 0, 'Enter monthly appointments of 0 or more.'],
@@ -47,8 +53,10 @@ export function calculateServicePricing({
   const rent = allocateRent({ monthlyRent, hoursPerMonth, durationMinutes: errors.durationMinutes ? 0 : durationMinutes });
   if (!rent.ok) Object.assign(errors, rent.errors);
   if (Object.keys(errors).length) return fail(errors);
-  if (processingRate + profitMargin >= 1) {
-    return fail({ profitMargin: 'Payment processing and profit margin together must be below 100% of the price.' });
+  if (processingRate + commissionRate + profitMargin >= 1 - EPS) {
+    if (!(commissionRate > 0)) return fail({ profitMargin: 'Payment processing and profit margin together must be below 100% of the price.' });
+    const message = 'Payment processing, commission and profit margin together must be below 100% of the price.';
+    return fail({ commissionRate: message, profitMargin: message });
   }
   const overhead = allocateOverhead(monthlyFixed + monthlyVariable, monthlyAppointments);
   if (overhead === null || (nonClientHoursPerMonth > 0 && !(monthlyAppointments > 0))) {
@@ -60,13 +68,15 @@ export function calculateServicePricing({
   const rentShare = rent.rentShare;
   const directCosts = productCost + rentShare + overhead;
   const breakEvenPrice = directCosts / (1 - processingRate);
-  const recommendedPrice = (directCosts + timeValue) / (1 - processingRate - profitMargin);
+  const recommendedPrice = (directCosts + timeValue) / (1 - processingRate - commissionRate - profitMargin);
 
   const at = (price) => {
     const processing = price * processingRate;
-    const earnings = price - processing - directCosts; // what is left to pay for your time and profit
-    const profit = earnings - timeValue;               // after paying your time at the target rate
-    return { price, processing, earnings, profit, margin: price > 0 ? profit / price : 0, effectiveHourly: earnings / (hours * loadFactor) };
+    const commission = price * commissionRate;
+    const earnings = price - processing - directCosts; // what is left to pay for labor (time + commission) and profit
+    const labor = timeValue + commission;
+    const profit = earnings - labor;                   // after paying labor at the hourly rate and commission
+    return { price, processing, commission, labor, earnings, profit, margin: price > 0 ? profit / price : 0, effectiveHourly: earnings / (hours * loadFactor) };
   };
   const range = { low: recommendedPrice, high: recommendedPrice * (1 + RANGE_HEADROOM) };
   const current = currentPrice > 0 ? at(currentPrice) : null;
@@ -74,6 +84,7 @@ export function calculateServicePricing({
   if (currentPrice > 0) status = currentPrice < range.low - CENT ? 'under' : currentPrice > range.high + CENT ? 'above' : 'within';
   return ok({
     hours, loadFactor, timeValue, overhead, rentShare, rentPerHour: rent.rentPerHour, directCosts, processingAtRecommended: recommendedPrice * processingRate,
+    commissionRate, commissionAtRecommended: recommendedPrice * commissionRate, laborAtRecommended: timeValue + recommendedPrice * commissionRate,
     breakEvenPrice, recommendedPrice, range, status,
     recommended: at(recommendedPrice),
     current,
@@ -87,20 +98,26 @@ export function calculateServicePricing({
   });
 }
 
+/** The example service length used when nobody says otherwise: a 90-minute service. */
+export const EXAMPLE_SERVICE_MINUTES = 90;
+
 /**
  * What your time is worth (solo provider or owner). Desired income is what you want to keep after estimated income tax.
  *   pre-tax income   = desired income / (1 − tax rate)
- *   annual expenses  = monthly rent × 12 + other annual business expenses
+ *   annual payroll   = monthly payroll × 12              (owners: wages + payroll taxes for staff)
+ *   annual expenses  = monthly rent × 12 + annual payroll + other annual business expenses
  *   required revenue = pre-tax income + annual expenses   (expenses are paid before income is taxed)
+ * The desired income IS the solo provider's (or owner's) own pay, so no separate pay is added: never counted twice.
  */
 export function calculateHourlyRate({
   desiredAnnualIncome, workingWeeksPerYear = 48, workingDaysPerWeek = 5, hoursPerDay = 8,
-  nonClientHoursPerDay = 0, monthlyRent = 0, annualExpenses = 0, taxRate = 0, exampleServiceMinutes = 120,
+  nonClientHoursPerDay = 0, monthlyRent = 0, monthlyPayroll = 0, annualExpenses = 0, taxRate = 0, exampleServiceMinutes = EXAMPLE_SERVICE_MINUTES,
 }) {
   const errors = guard([
     ['desiredAnnualIncome', desiredAnnualIncome, (v) => v > 0, 'Enter a desired annual income greater than $0.'],
     ...scheduleChecks({ workingWeeksPerYear, workingDaysPerWeek, hoursPerDay, nonClientHoursPerDay }),
     ['monthlyRent', monthlyRent, (v) => v >= 0, 'Enter monthly rent of $0 or more.'],
+    ['monthlyPayroll', monthlyPayroll, (v) => v >= 0, 'Enter monthly payroll of $0 or more.'],
     ['annualExpenses', annualExpenses, (v) => v >= 0, 'Enter other annual business expenses of $0 or more.'],
     ['taxRate', taxRate, (v) => v >= 0 && v < 1, 'Enter an estimated tax rate below 100%.'],
     ['exampleServiceMinutes', exampleServiceMinutes, (v) => v >= 0, 'Enter a service length of 0 minutes or more.'],
@@ -111,11 +128,12 @@ export function calculateHourlyRate({
   const preTaxIncome = desiredAnnualIncome / (1 - taxRate);
   const estimatedTaxes = preTaxIncome - desiredAnnualIncome;
   const annualRent = monthlyRent * 12;
-  const totalExpenses = annualRent + annualExpenses;
+  const annualPayroll = monthlyPayroll * 12;
+  const totalExpenses = annualRent + annualPayroll + annualExpenses;
   const annualRevenue = preTaxIncome + totalExpenses;
   const perClientHour = annualRevenue / time.annualClientHours;
   return ok({
-    ...time, preTaxIncome, estimatedTaxes, annualRevenue, annualRent, otherExpenses: annualExpenses, totalExpenses,
+    ...time, preTaxIncome, estimatedTaxes, annualRevenue, annualRent, annualPayroll, otherExpenses: annualExpenses, totalExpenses,
     rentShareOfRevenue: annualRent / annualRevenue,
     rentPerClientHour: annualRent / time.annualClientHours,
     monthlyRevenue: annualRevenue / 12,
@@ -147,10 +165,15 @@ export const PAY_TYPES = ['hourly', 'commission', 'mixed'];
  *   mixed           : base pay = base wage × paid hours;
  *                     service revenue = (pre-tax income − base pay − annual tips) / commission rate
  * When tips (and base pay) already reach the goal, nothing more is needed: goalMet, never a negative wage or revenue.
+ * Hourly, with a current wage entered (0 = not entered, only the required wage is shown):
+ *   current take-home = (current wage × paid hours + annual tips) × (1 − tax rate)
+ *   raise needed      = required wage − current wage          (only when short; never negative)
+ *   take-home short   = desired take-home − current take-home  (only when short)
+ *   surplus           = current wage − required wage, and current take-home − desired (only when met)
  */
 export function calculateEmployeeEarnings({
-  desiredAnnualIncome, payType = 'hourly', monthlyTips = 0, commissionRate = 0, baseHourlyWage = 0, taxRate = 0,
-  workingWeeksPerYear = 48, workingDaysPerWeek = 5, hoursPerDay = 8, nonClientHoursPerDay = 0, exampleServiceMinutes = 120,
+  desiredAnnualIncome, payType = 'hourly', monthlyTips = 0, commissionRate = 0, baseHourlyWage = 0, currentHourlyWage = 0, taxRate = 0,
+  workingWeeksPerYear = 48, workingDaysPerWeek = 5, hoursPerDay = 8, nonClientHoursPerDay = 0, exampleServiceMinutes = EXAMPLE_SERVICE_MINUTES,
 }) {
   const commission = payType === 'commission' || payType === 'mixed';
   const errors = guard([
@@ -160,6 +183,7 @@ export function calculateEmployeeEarnings({
     ['taxRate', taxRate, (v) => v >= 0 && v < 1, 'Enter an estimated tax rate below 100%.'],
     ['exampleServiceMinutes', exampleServiceMinutes, (v) => v >= 0, 'Enter a service length of 0 minutes or more.'],
     ...(commission ? [['commissionRate', commissionRate, (v) => v > 0 && v < 1, 'Enter a commission rate above 0% and below 100%.']] : []),
+    ...(payType === 'hourly' ? [['currentHourlyWage', currentHourlyWage, (v) => v >= 0, 'Enter your current hourly wage of $0 or more, or leave it blank.']] : []),
     ...(payType === 'mixed' ? [['baseHourlyWage', baseHourlyWage, (v) => v >= 0, 'Enter a base hourly wage of $0 or more.']] : []),
   ]);
   if (!PAY_TYPES.includes(payType)) errors.payType = 'Choose how you are paid: hourly, commission, or hourly + commission.';
@@ -178,7 +202,21 @@ export function calculateEmployeeEarnings({
     surplus: Math.max(0, basePay + annualTips - preTaxIncome),
   };
   if (payType === 'hourly') {
-    return ok({ ...base, requiredWage: goalMet ? 0 : remaining / time.annualHours });
+    const requiredWage = goalMet ? 0 : remaining / time.annualHours;
+    let current = null;
+    if (currentHourlyWage > 0) {
+      const annualPay = currentHourlyWage * time.annualHours;
+      const takeHome = (annualPay + annualTips) * (1 - taxRate);
+      const meetsGoal = currentHourlyWage + CENT >= requiredWage;
+      current = {
+        wage: currentHourlyWage, annualPay, takeHome, meetsGoal,
+        raisePerHour: meetsGoal ? 0 : requiredWage - currentHourlyWage,
+        takeHomeShort: meetsGoal ? 0 : Math.max(0, desiredAnnualIncome - takeHome),
+        surplusPerHour: meetsGoal ? Math.max(0, currentHourlyWage - requiredWage) : 0,
+        takeHomeSurplus: meetsGoal ? Math.max(0, takeHome - desiredAnnualIncome) : 0,
+      };
+    }
+    return ok({ ...base, requiredWage, current });
   }
   const annualServiceRevenue = goalMet ? 0 : remaining / commissionRate;
   const perClientHour = annualServiceRevenue / time.annualClientHours;

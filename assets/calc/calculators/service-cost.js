@@ -2,7 +2,8 @@ import { mountCalculator } from '../ui/framework.js';
 import { calculateServiceCost } from '../core/costs.js';
 import { parseNumber } from '../core/validation.js';
 import { formatMoney as money, formatNumber } from '../core/money.js';
-import { formatPercent } from '../core/percentages.js';
+import { formatPercent, toRate } from '../core/percentages.js';
+import { serviceText, signatureService } from '../ui/professions.js';
 
 const LABEL = { product: 'Product', supply: 'Supplies', other: 'Other consumable' };
 const QTY = { name: 'a quantity', unit: 'number', max: 100000 };
@@ -45,7 +46,7 @@ function addRow(root, category = 'product') {
   return row;
 }
 
-mountCalculator({
+export const config = mountCalculator({
   readExtra: readRows,
   printExtra: (root) => readRows(root).values.meta.map((m) => [`${m.name} (${LABEL[m.category].toLowerCase()})`, `${m.qty} × $${m.cost}`]),
   onReady(root, recalc) {
@@ -63,52 +64,86 @@ mountCalculator({
       recalc();
     });
   },
-  compute({ values: v, type }) {
-    const employee = type === 'employee'; // the business pays the rent: employees see products and supplies only
-    const r = calculateServiceCost({ items: v.items, monthlyRent: employee ? 0 : v.monthlyRent,
-      hoursPerMonth: employee ? undefined : v.hoursPerMonth, durationMinutes: employee ? 0 : v.durationMinutes });
+  compute({ values: v, type, profession }) {
+    const employee = type === 'employee'; // the business pays rent and labor: employees see products and supplies only
+    const owner = type === 'owner';
+    // labor, each type in its own field: solo = monthly pay ÷ hours a month × duration; owner = wage × duration + commission
+    const r = employee ? calculateServiceCost({ items: v.items }) : calculateServiceCost({ items: v.items, monthlyRent: v.monthlyRent,
+      hoursPerMonth: v.hoursPerMonth, durationMinutes: v.durationMinutes,
+      monthlyPay: owner ? 0 : v.monthlyPay, providerWage: owner ? v.providerWage : 0,
+      commissionRate: owner ? toRate(v.commissionRate) : 0, price: owner ? v.price : 0 });
     if (!r.ok) return r;
     if (!(r.trueCost > 0)) return { ok: false, errors: { _: 'Add at least one item with a cost to see your total.' } };
     const hasRent = r.rentShare > 0;
+    const hasLabor = r.labor > 0;
     const top = r.largestIndex;
+    const service = serviceText(profession, v.durationMinutes || signatureService(profession).minutes);
     let insight = r.consumableCost > 0 && v.items.length > 1
-      ? `${v.meta[top].name} is the biggest product or supply cost in this service at ${money(r.lines[top], { cents: true })}, ${formatPercent(r.largestShare)} of products and supplies.`
-      : `This service uses ${money(r.consumableCost, { cents: true })} in products and supplies every time you perform it.`;
-    if (hasRent) insight += ` Rent adds ${money(r.rentShare, { cents: true })}, for a true cost of ${money(r.trueCost, { cents: true })}.`;
+      ? `${v.meta[top].name} is the biggest product or supply cost in this ${service.name} at ${money(r.lines[top], { cents: true })}, ${formatPercent(r.largestShare)} of products and supplies.`
+      : `This ${service.name} uses ${money(r.consumableCost, { cents: true })} in products and supplies every time you perform it.`;
+    if (hasRent || hasLabor) {
+      const adds = [hasRent ? `rent adds ${money(r.rentShare, { cents: true })}` : '', hasLabor ? `${owner ? 'labor' : 'your pay'} adds ${money(r.labor, { cents: true })}` : ''].filter(Boolean).join(' and ');
+      insight += ` ${adds[0].toUpperCase()}${adds.slice(1)}, for a true cost of ${money(r.trueCost, { cents: true })}.`;
+    }
+    if (r.commissionNeedsPrice) insight += ' Commission is a share of the price, so enter the service price to include it.';
+    const mins = `${formatNumber(v.durationMinutes, 0)} minutes`;
     const cards = [
       { label: 'Total product cost', value: money(r.productCost, { cents: true }) },
       { label: 'Total supply cost', value: money(r.supplyCost, { cents: true }), note: r.otherCost > 0 ? `Includes ${money(r.otherCost, { cents: true })} other consumables` : 'Supplies and other consumables' },
     ];
-    if (!employee) cards.push({ label: 'Rent share', value: money(r.rentShare, { cents: true }),
-      note: hasRent ? `${money(r.rentPerHour, { cents: true })}/hour × ${formatNumber(v.durationMinutes, 0)} minutes` : 'No rent entered' });
+    if (!employee) {
+      cards.push({ label: 'Rent share', value: money(r.rentShare, { cents: true }),
+        note: hasRent ? `${money(r.rentPerHour, { cents: true })}/hour × ${mins}` : 'No rent entered' });
+      const laborNote = owner
+        ? [r.laborTime > 0 ? `${money(r.laborPerHour, { cents: true })}/hour wage × ${mins}` : '', r.commission > 0 ? `${money(r.commission, { cents: true })} commission` : '',
+          r.commissionNeedsPrice ? 'commission needs a service price' : ''].filter(Boolean).join(' + ') || 'No wage or commission entered'
+        : hasLabor ? `${money(r.payPerHour, { cents: true })}/hour × ${mins}` : 'No monthly pay entered';
+      cards.push({ label: owner ? 'Labor' : 'Your pay (labor)', value: money(r.labor, { cents: true }), note: laborNote });
+    }
     cards.push({ label: 'Items counted', value: formatNumber(r.itemCount, 0) });
     const method = [
       'Each line: quantity used × unit cost. For a product you buy in bulk, unit cost is the price of one use (bottle price ÷ number of uses).',
       'Total product cost adds every “Product” line; total supply cost adds “Supplies” and “Other consumable” lines.',
     ];
     if (employee) {
-      method.push('True cost = product cost + supply cost. Rent is paid by the business you work for, so it is not added here.');
+      method.push('True cost = product cost + supply cost. Rent and labor are paid by the business you work for, so they are not added here.');
     } else {
       method.push(hasRent
-        ? `Rent share: ${money(v.monthlyRent)} rent ÷ ${formatNumber(v.hoursPerMonth)} hours worked a month = ${money(r.rentPerHour, { cents: true })}/hour, × ${formatNumber(v.durationMinutes, 0)} minutes = ${money(r.rentShare, { cents: true })}.`
+        ? `Rent share: ${money(v.monthlyRent)} rent ÷ ${formatNumber(v.hoursPerMonth)} hours worked a month = ${money(r.rentPerHour, { cents: true })}/hour, × ${mins} = ${money(r.rentShare, { cents: true })}.`
         : 'No rent was entered, so the rent share is $0.');
-      method.push('True cost = product cost + supply cost + rent share. It does not include your time, other expenses or card fees; the Service Pricing Calculator adds those.');
+      method.push(owner
+        ? `Labor: ${money(r.laborPerHour, { cents: true })}/hour provider wage × ${mins} = ${money(r.laborTime, { cents: true })}` +
+          (r.commissionNeedsPrice ? '. Commission is a share of the price; no price was entered, so it is not included yet.'
+            : `, + ${formatPercent(toRate(v.commissionRate), 1)} commission on a ${money(v.price)} price = ${money(r.commission, { cents: true })}.`)
+        : hasLabor
+          ? `Your pay (labor): ${money(v.monthlyPay)} monthly pay ÷ ${formatNumber(v.hoursPerMonth)} hours worked a month = ${money(r.payPerHour, { cents: true })}/hour, × ${mins} = ${money(r.labor, { cents: true })}.`
+          : 'No monthly pay was entered, so your time adds $0. Add it to see the full cost of your time.');
+      method.push('True cost = product cost + supply cost + rent share + labor. Other expenses, card fees and profit are added by the Service Pricing Calculator.');
     }
     // Pricing gets each part in its own field: products and supplies as product cost, rent with its hours and duration,
-    // so nothing is counted twice.
+    // and labor as pay per hour (solo) or wage + commission (owner), so nothing is counted twice.
     const pricing = new URLSearchParams({ productCost: r.consumableCost.toFixed(2) });
     if (!employee) {
       if (v.durationMinutes > 0) pricing.set('durationMinutes', String(v.durationMinutes));
       if (hasRent) { pricing.set('monthlyRent', String(v.monthlyRent)); pricing.set('hoursPerMonth', String(v.hoursPerMonth)); }
+      if (owner) {
+        if (v.providerWage > 0) pricing.set('providerWage', String(v.providerWage));
+        if (v.commissionRate > 0) pricing.set('commissionRate', String(v.commissionRate));
+        if (v.price > 0) pricing.set('currentPrice', String(v.price));
+      } else if (r.payPerHour > 0) {
+        pricing.set('targetHourly', r.payPerHour.toFixed(2));
+      }
       pricing.set('type', type);
     }
+    if (profession) pricing.set('profession', profession);
+    const parts = employee ? 'products and supplies' : [hasRent ? 'rent' : '', hasLabor ? 'labor' : ''].filter(Boolean).join(' and ');
     return {
       ok: true, raw: r,
       view: {
-        primary: { value: money(r.trueCost, { cents: true }), label: employee || !hasRent ? 'True product and supply cost per service' : 'True cost per service (products, supplies and rent)' },
+        primary: { value: money(r.trueCost, { cents: true }), label: employee || (!hasRent && !hasLabor) ? 'True product and supply cost per service' : `True cost per service (products, supplies, ${parts})` },
         cards, insight, method,
         cta: { href: `../service-pricing/?${pricing}`, text: 'Use this cost in the Service Pricing Calculator →' },
-        share: { value: money(r.trueCost, { cents: true }), label: hasRent ? 'True cost per service, rent included' : 'True cost of products and supplies per service', insight: 'Every service has a cost before it has a price.' },
+        share: { value: money(r.trueCost, { cents: true }), label: hasRent || hasLabor ? `True cost of a ${service.phrase}, ${parts} included` : `True cost of products and supplies for a ${service.phrase}`, insight: 'Every service has a cost before it has a price.' },
       },
     };
   },

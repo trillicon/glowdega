@@ -139,18 +139,186 @@ test('hourly rate: employee pay types, each field shown only for its pay type; e
   assert.match(html, /take-home/);
 });
 
-test('hub: hero, audience selector, four categories, 5 live calculators and 5 unlinked coming-soon cards', () => {
+const LICENSES = [['esthetician', 'Esthetician'], ['cosmetologist', 'Cosmetologist/Hairstylist'], ['manicurist', 'Manicurist/Nail Technician'], ['barber', 'Barber']];
+const optionsOf = (select) => [...select.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]);
+
+test('hub: hero, four categories, 5 live calculators and 5 unlinked coming-soon cards, all in the HTML', () => {
   const html = read('resources/index.html');
   assert.match(html, /<h1>Beauty Business Calculators<\/h1>/);
-  for (const t of ['solo', 'employee', 'owner']) assert.match(html, new RegExp(`data-audience="${t}" aria-pressed="false"`));
   for (const cat of ['Pricing', 'Profitability', 'Growth', 'Promotions']) assert.match(html, new RegExp(`<h2 id="cat-${cat.toLowerCase()}">${cat}</h2>`));
-  for (const c of CALCS) assert.match(html, new RegExp(`<a class="hub-card" href="${c}/" data-audiences="[a-z ]+"`), c);
+  // the cards are plain links in the static HTML (crawlable); JavaScript only adds ?type=&profession=
+  for (const c of CALCS) assert.match(html, new RegExp(`<a class="hub-card" href="${c}/" data-audiences="[a-z ]+"[^>]* data-types="[a-z ]+"`), c);
   const soon = [...html.matchAll(/<div class="hub-card is-soon" aria-disabled="true"[^>]*>(.*?)<\/div>/gs)];
   assert.equal(soon.length, SOON.length);
   for (const s of SOON) assert.doesNotMatch(html, new RegExp(`href="[^"]*${s}`), `${s} must not be clickable yet`);
   assert.match(html, /Additional Resources/);
   for (const m of ['Pricing Guides', 'Business Templates', 'Marketing Tools']) assert.match(html, new RegExp(`<li class="hub-soon" aria-disabled="true"><span>${m}</span><span class="soon-pill">Coming soon</span></li>`));
   assert.doesNotMatch(html, /ad-slot|data-ad-/);
+  assert.doesNotMatch(html, /data-audience=|aria-pressed/, 'the old "I’m a…" buttons are replaced by the gate');
+  // no card is hidden in the HTML itself: hiding happens only once the hub script can run
+  assert.doesNotMatch(one(html, /<div class="hub-body">(.*)<\/div><\/div>/s), /\shidden[\s>]/);
+});
+
+test('hub gate: "I’m a Licensed [4 licenses] and a [3 worker types]" sentence picker', () => {
+  const html = read('resources/index.html');
+  const gate = one(html, /(<form class="hub-gate" data-hub-gate[^>]*>.*?<\/form>)/s);
+  assert.ok(gate, 'no gate form');
+  assert.match(text(gate).replace(/\s+/g, ' '), /I’m a Licensed .* and a /);
+  const prof = one(gate, /(<select name="profession"[^>]*>.*?<\/select>)/s);
+  const type = one(gate, /(<select name="type"[^>]*>.*?<\/select>)/s);
+  assert.deepEqual(optionsOf(prof), [['', 'choose your license'], ...LICENSES]);
+  assert.deepEqual(optionsOf(type), [['', 'choose how you work'], ['solo', 'Solo Provider'], ['employee', 'Employee'], ['owner', 'Business Owner']]);
+  assert.match(prof, /aria-label="Your license"/);
+  assert.match(type, /aria-label="How you work"/);
+  assert.match(html, /<p class="hub-chosen" data-hub-chosen tabindex="-1" hidden>.*?<button type="button" class="hub-change" data-hub-change>Change<\/button><\/p>/s);
+  assert.ok(html.indexOf('data-hub-gate') < html.indexOf('class="hub-body"'), 'the picker sits above the cards');
+});
+
+test('hub gate: progressive enhancement, cards visible with JavaScript off (noscript), hidden only by the hub-js class', () => {
+  const html = read('resources/index.html');
+  const css = read('assets/style.css');
+  // the flag is set inline before the cards render, and only where module scripts (the hub script) can run
+  assert.match(html, /<script>if\('noModule' in HTMLScriptElement\.prototype\)document\.documentElement\.classList\.add\('hub-js'\)<\/script><form class="hub-gate"/);
+  assert.match(html, /<noscript><p class="hub-status">Every calculator is listed below\.[^<]*<\/p><\/noscript>/);
+  assert.match(css, /\.hub-gate\{display:none[;}]/, 'without the flag (JavaScript off) the gate is not shown');
+  assert.match(css, /\.hub-js \.hub-gate:not\(\[hidden\]\)\{display:block\}/);
+  assert.match(css, /\.hub-js \.hub-body:not\(\.is-chosen\) \.hub-cat\{display:none\}/, 'cards hide until both are chosen, only with JS');
+  // nothing else hides the categories or cards unconditionally
+  for (const rule of css.matchAll(/([^{}]+)\{[^}]*display:none[^}]*\}/g)) {
+    for (const sel of rule[1].split(',')) {
+      if (/\.hub-(cat|card|body)\b/.test(sel)) assert.match(sel, /\.hub-js|\[hidden\]/, `"${sel.trim()}" would hide cards without JavaScript`);
+    }
+  }
+  assert.match(read('assets/calc/hub.js'), /savedChoice\(PROFESSION_KEY\)[\s\S]*savedChoice\(TYPE_KEY\)/, 'returning visitors skip the gate');
+});
+
+test('hub links: matching cards link with ?type=&profession=; ?type only where the calculator supports it', async () => {
+  const { cardHref, cardMatches, chosenSentence } = await import('../assets/calc/hub.js');
+  assert.equal(cardHref('service-pricing/', { type: 'owner', profession: 'barber', types: ['solo', 'owner'] }), 'service-pricing/?type=owner&profession=barber');
+  assert.equal(cardHref('hourly-rate/', { type: 'employee', profession: 'manicurist', types: ['solo', 'employee', 'owner'] }), 'hourly-rate/?type=employee&profession=manicurist');
+  assert.equal(cardHref('service-pricing/', { type: 'employee', profession: 'esthetician', types: ['solo', 'owner'] }), 'service-pricing/?profession=esthetician');
+  assert.equal(cardHref('break-even/?type=solo&profession=barber', { type: 'owner', profession: 'cosmetologist', types: ['solo', 'owner'] }), 'break-even/?type=owner&profession=cosmetologist', 'a new choice replaces the old');
+  assert.equal(cardHref('break-even/', { type: 'nope', profession: 'nope', types: ['solo'] }), 'break-even/');
+  assert.equal(cardMatches('solo owner', 'owner'), true);
+  assert.equal(cardMatches('solo owner', 'employee'), false);
+  assert.equal(cardMatches('solo owner', null), false, 'nothing matches until a type is chosen');
+  assert.equal(chosenSentence('cosmetologist', 'employee'), 'Showing the calculators for a licensed Cosmetologist/Hairstylist working as an Employee.');
+  // the hub's cards declare the types their calculator supports, which is what the links use
+  const html = read('resources/index.html');
+  assert.equal(one(html, /href="service-pricing\/"[^>]* data-types="([^"]+)"/), 'solo owner');
+  assert.equal(one(html, /href="hourly-rate\/"[^>]* data-types="([^"]+)"/), 'solo employee owner');
+});
+
+test('calculator pages are not gated: worker-type selector plus a small profession selector, pre-set by the framework', async () => {
+  const { PROFESSIONS } = await import('../assets/calc/ui/professions.js');
+  assert.deepEqual(Object.entries(PROFESSIONS).map(([k, v]) => [k, v.label]), LICENSES, 'page options and the wording module agree');
+  for (const c of CALCS) {
+    const html = read(`resources/${c}/index.html`);
+    assert.doesNotMatch(html, /data-hub-gate/, `${c}: never gated`);
+    for (const t of ['solo', 'employee', 'owner']) assert.match(html, new RegExp(`name="businessType" value="${t}"`), `${c}: ${t}`);
+    const sel = one(html, /(<select id="f-profession" name="profession">.*?<\/select>)/s);
+    assert.ok(sel, `${c}: no profession selector`);
+    assert.deepEqual(optionsOf(sel), LICENSES, c);
+    assert.match(sel, /value="esthetician" selected/);
+    assert.match(html, /<label for="f-profession">Your license<\/label>/);
+    assert.match(html, /The math is the same for every license\./);
+  }
+  const fw = read('assets/calc/ui/framework.js');
+  assert.match(fw, /params\.get\('profession'\), savedChoice\(PROFESSION_KEY\)/, 'profession pre-set from the URL, then the hub choice');
+  assert.match(fw, /params\.get\('type'\), savedAudience\(\)/, 'type pre-set from the URL, then the hub choice');
+});
+
+// labor fields: [calculator, field, label, types]
+const LABOR = [
+  ['service-pricing', 'targetHourly', 'Your pay per hour', 'solo'],
+  ['service-pricing', 'providerWage', 'Provider’s hourly wage', 'owner'],
+  ['service-pricing', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['hourly-rate', 'monthlyPayroll', 'Monthly payroll (wages + payroll taxes)', 'owner'],
+  ['service-cost', 'monthlyPay', 'Your monthly pay', 'solo'],
+  ['service-cost', 'providerWage', 'Provider’s hourly wage', 'owner'],
+  ['service-cost', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['service-cost', 'price', 'Service price', 'owner'],
+  ['service-profitability', 'targetHourly', 'Your pay per hour', 'solo'],
+  ['service-profitability', 'providerWage', 'Provider’s hourly wage', 'owner'],
+  ['service-profitability', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['break-even', 'monthlyPay', 'Your monthly pay', 'solo'],
+  ['break-even', 'monthlyPayroll', 'Monthly payroll (wages + payroll taxes)', 'owner'],
+  ['break-even', 'ownerPay', 'Your monthly owner pay', 'owner'],
+  ['break-even', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+];
+
+test('labor fields: solo pay and owner payroll/wage/commission on every calculator with costs; never shown to employees', () => {
+  for (const [c, name, label, types] of LABOR) {
+    const html = read(`resources/${c}/index.html`);
+    const f = fieldOf(html, name);
+    assert.ok(f, `${c}: no ${name}`);
+    assert.equal(one(wrapperOf(html, name), /data-types="([^"]*)"/), types, `${c} ${name}: only for ${types}`);
+    assert.match(f, new RegExp(`<span class="calc-label">${label.replace(/[()+]/g, '\\$&')}</span>`), `${c} ${name}: label`);
+  }
+  // nothing labor-like is ever shown to employees on any calculator (hourly-rate's commission is the employee's own pay)
+  for (const c of CALCS) {
+    const html = read(`resources/${c}/index.html`);
+    for (const name of ['monthlyPay', 'monthlyPayroll', 'ownerPay', 'providerWage', ...(c === 'hourly-rate' ? [] : ['commissionRate', 'targetHourly'])]) {
+      const wrap = wrapperOf(html, name);
+      if (wrap) assert.doesNotMatch(wrap, /employee/, `${c} ${name}: employees never see labor`);
+    }
+  }
+  // solo pricing has one labor input (pay per hour); there is no monthly pay to count twice
+  assert.doesNotMatch(read('resources/service-pricing/index.html'), /name="monthlyPay"|name="laborCost"/);
+  assert.doesNotMatch(read('resources/service-profitability/index.html'), /name="laborCost"/);
+  assert.match(fieldOf(read('resources/service-pricing/index.html'), 'targetHourly'), /data-required/, 'solo pricing still needs your pay per hour');
+  assert.match(one(read('resources/break-even/index.html'), /id="f-fixedCosts-hint">([^<]*)</), /not rent or pay/, 'pay is never typed into other fixed costs too');
+});
+
+test('hourly rate: a visible, optional "Your current hourly wage" for hourly employees; hourly + commission keeps its base wage', () => {
+  const html = read('resources/hourly-rate/index.html');
+  const cur = fieldOf(html, 'currentHourlyWage');
+  assert.match(cur, /<span class="calc-label">Your current hourly wage<\/span> <span class="calc-optional">optional<\/span>/);
+  assert.doesNotMatch(cur, /data-required/, 'blank = just show the required wage');
+  assert.equal(one(wrapperOf(html, 'currentHourlyWage'), /data-types="([^"]*)"/), 'employee');
+  assert.equal(one(wrapperOf(html, 'currentHourlyWage'), /data-when="([^"]*)"/), 'payType:hourly');
+  assert.doesNotMatch(wrapperOf(html, 'currentHourlyWage'), /\shidden/, 'not tucked away: it is in the main inputs');
+  assert.ok(html.indexOf('name="currentHourlyWage"') < html.indexOf('class="calc-advanced"'), 'shown with the main inputs');
+  assert.match(fieldOf(html, 'baseHourlyWage'), /<span class="calc-label">Your current base hourly wage<\/span>/, 'labelled the same way');
+});
+
+test('examples are 60 or 90 minutes: no 2-hour (120-minute) service anywhere in pages, hints, methodology or code', () => {
+  const files = [...PAGES, ...['assets/calc/core', 'assets/calc/calculators', 'assets/calc/ui'].flatMap((d) => readdirSync(join(ROOT, d)).map((f) => `${d}/${f}`)),
+    'tools/resources_site.py', 'tests/calc-engine.test.mjs', 'tests/calc-views.test.mjs'];
+  for (const f of files) {
+    const src = read(f);
+    assert.doesNotMatch(src, /\b(2|two)[- ]hour (service|facial|peel|appointment)|\b(2|two)-hour\b|120[- ]minute|exampleServiceMinutes: 120|value='120'/i, f);
+    for (const m of text(src).matchAll(/\b(\d+)-minute\b/g)) assert.ok(['60', '90'].includes(m[1]), `${f}: a ${m[1]}-minute example`);
+  }
+  for (const c of CALCS) {
+    const html = read(`resources/${c}/index.html`);
+    for (const name of ['durationMinutes', 'exampleServiceMinutes']) {
+      const f = fieldOf(html, name);
+      if (!f) continue;
+      for (const attr of ['placeholder', 'value']) {
+        const v = one(f, new RegExp(`${attr}="([^"]*)"`));
+        if (v) assert.ok(['60', '90'].includes(v), `${c} ${name} ${attr}=${v}`);
+      }
+    }
+  }
+  assert.match(fieldOf(read('resources/hourly-rate/index.html'), 'exampleServiceMinutes'), /value="90"/);
+});
+
+test('intros: a mix of esthetician, hairstylist, lash, brow, nail technician and barber scenarios, without keyword stuffing', () => {
+  const KINDS = { esthetician: /esthetician|facial|peel/i, hairstylist: /hairstylist|color|cut-and-color|root touch-up/i, lash: /\blash/i,
+    brow: /\bbrow/i, nail: /nail technician|manicure/i, barber: /barber/i };
+  const seen = new Set();
+  for (const c of CALCS) {
+    const intro = text(one(read(`resources/${c}/index.html`), /<div class="calc-intro">(.*?)<\/div>/s) || '');
+    const kinds = Object.entries(KINDS).filter(([, re]) => re.test(intro)).map(([k]) => k);
+    kinds.forEach((k) => seen.add(k));
+    assert.ok(kinds.length >= 2, `${c}: only ${kinds.join(', ')} in the intro`);
+    for (const word of ['esthetician', 'hairstylist', 'lash', 'brow', 'nail', 'barber', 'calculator', 'beauty']) {
+      const n = (intro.match(new RegExp(`\\b${word}`, 'gi')) || []).length;
+      assert.ok(n <= 3, `${c}: "${word}" appears ${n} times (keyword stuffing)`);
+    }
+  }
+  assert.deepEqual([...seen].sort(), Object.keys(KINDS).sort(), 'every profession appears somewhere');
 });
 
 test('Resources is the 4th header link and a footer link on every page, including the article template', () => {

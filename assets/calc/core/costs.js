@@ -30,17 +30,35 @@ export function calculateConsumableCost(items) {
 }
 
 /**
- * True cost of one service = product cost + supply cost + rent share.
+ * True cost of one service = product cost + supply cost + rent share + labor.
  *   rent share = monthly rent / hours worked per month × service hours   (allocateRent)
- * With rent above $0 the service duration is required, since rent is shared by time.
+ *   labor      solo : your monthly pay / hours worked per month × service hours
+ *              owner: provider's hourly wage × service hours + service price × commission
+ * Commission is a share of the price, so it is only counted when a price is entered (commissionNeedsPrice otherwise).
+ * With rent or time-based labor above $0 the service duration is required, since both are shared by time.
  */
-export function calculateServiceCost({ items, monthlyRent = 0, hoursPerMonth = DEFAULT_HOURS_PER_MONTH, durationMinutes = 0 }) {
+export function calculateServiceCost({ items, monthlyRent = 0, hoursPerMonth = DEFAULT_HOURS_PER_MONTH, durationMinutes = 0,
+  monthlyPay = 0, providerWage = 0, commissionRate = 0, price = 0 }) {
   const consumables = calculateConsumableCost(items);
   const errors = consumables.ok ? {} : { ...consumables.errors };
-  if (monthlyRent > 0 && !(durationMinutes > 0)) errors.durationMinutes = 'Enter the service duration, so rent can be shared by the time the service takes.';
+  Object.assign(errors, guard([
+    ['monthlyPay', monthlyPay, (v) => v >= 0, 'Enter your monthly pay of $0 or more.'],
+    ['providerWage', providerWage, (v) => v >= 0, 'Enter an hourly wage of $0 or more.'],
+    ['commissionRate', commissionRate, (v) => v >= 0 && v < 1, 'Enter a commission below 100%.'],
+    ['price', price, (v) => v >= 0, 'Enter a service price of $0 or more.'],
+  ]));
+  const timed = monthlyRent > 0 || monthlyPay > 0 || providerWage > 0;
+  if (timed && !(durationMinutes > 0)) errors.durationMinutes = 'Enter the service duration, so rent and labor can be shared by the time the service takes.';
   const rent = allocateRent({ monthlyRent, hoursPerMonth, durationMinutes: errors.durationMinutes ? 0 : durationMinutes });
   if (!rent.ok) Object.assign(errors, rent.errors);
   if (Object.keys(errors).length) return { ok: false, errors };
+  const hours = durationMinutes / 60;
+  const payPerHour = monthlyPay / hoursPerMonth;
+  const laborPerHour = payPerHour + providerWage;
+  const laborTime = laborPerHour * hours;
+  const commission = price * commissionRate;
+  const labor = laborTime + commission;
   return { ...consumables, rentShare: rent.rentShare, rentPerHour: rent.rentPerHour, consumableCost: consumables.totalCost,
-    trueCost: consumables.totalCost + rent.rentShare };
+    payPerHour, laborPerHour, laborTime, commission, labor, commissionNeedsPrice: commissionRate > 0 && !(price > 0),
+    trueCost: consumables.totalCost + rent.rentShare + labor };
 }

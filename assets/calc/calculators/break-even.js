@@ -2,6 +2,7 @@ import { mountCalculator } from '../ui/framework.js';
 import { calculateBreakEven, breakEvenChart } from '../core/breakeven.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
+import { signatureService } from '../ui/professions.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const svgEl = (tag, attrs, text) => {
@@ -46,20 +47,35 @@ function chartNode(r) {
   return fig;
 }
 
-mountCalculator({
+export const config = mountCalculator({
   unsupportedTypes: ['employee'],
-  compute({ values: v }) {
+  compute({ values: v, type, profession }) {
+    const owner = type === 'owner';
+    // labor: solo pay is a fixed cost; owner payroll + owner pay are fixed costs and commission is a cost per service.
+    // Each type passes only its own labor fields, so nothing is counted twice.
     const r = calculateBreakEven({
       fixedCosts: v.fixedCosts, monthlyRent: v.monthlyRent, servicePrice: v.servicePrice, variableCost: v.variableCost, processingRate: toRate(v.processingRate),
       retailRevenue: v.retailRevenue, retailCostRate: toRate(v.retailCostRate), workingDaysPerWeek: v.workingDaysPerWeek,
+      monthlyPay: owner ? 0 : v.monthlyPay, monthlyPayroll: owner ? v.monthlyPayroll : 0, ownerPay: owner ? v.ownerPay : 0,
+      commissionRate: owner ? toRate(v.commissionRate) : 0,
     });
     if (!r.ok) return r;
     const contribution = describeProfit(r.contribution);
+    const sig = signatureService(profession);
+    const laborWords = owner ? 'payroll and owner pay' : 'your pay';
+    const fixedNote = `${money(r.rent)} rent + ${money(r.laborFixed)} ${laborWords} + ${money(r.otherFixedCosts)} other`;
+    const laborCard = { label: owner ? 'Labor a month' : 'Your pay a month', value: money(r.laborFixed),
+      note: owner ? `${money(v.monthlyPayroll)} payroll + ${money(v.ownerPay)} owner pay` + (r.commission > 0 ? `; commission ${money(r.commission, { cents: true })} per service` : '')
+        : r.laborFixed > 0 ? 'Counted as a fixed cost' : 'No monthly pay entered' };
     const method = [
       `Net price after card processing: ${money(v.servicePrice, { cents: true })} × (1 − ${formatPercent(toRate(v.processingRate), 1)}) = ${money(r.netPrice, { cents: true })}.`,
-      `Contribution per appointment: net price − ${money(v.variableCost, { cents: true })} variable cost` + (v.retailRevenue > 0 ? ' + retail after its product cost and processing' : '') + ` = ${contribution.loss ? '−' : ''}${money(contribution.amount, { cents: true })}.`,
-      `Monthly fixed costs: ${money(r.rent)} rent + ${money(r.otherFixedCosts)} other fixed costs = ${money(r.fixedCosts)}.`,
-      'Break-even appointments = monthly fixed costs (rent included) ÷ contribution per appointment.',
+      `Contribution per appointment: net price` + (owner ? ` − ${money(r.commission, { cents: true })} commission (${formatPercent(toRate(v.commissionRate), 1)} of the price)` : '') +
+        ` − ${money(v.variableCost, { cents: true })} variable cost` + (v.retailRevenue > 0 ? ' + retail after its product cost and processing' : '') + ` = ${contribution.loss ? '−' : ''}${money(contribution.amount, { cents: true })}.`,
+      owner
+        ? `Labor: ${money(v.monthlyPayroll)} payroll (wages + payroll taxes) + ${money(v.ownerPay)} your owner pay = ${money(r.laborFixed)} a month, a fixed cost. Commission is paid per service, so it comes off each appointment’s contribution instead.`
+        : `Labor: ${money(r.laborFixed)} your monthly pay, a fixed cost, so break-even means you are paid too.`,
+      `Monthly fixed costs: ${fixedNote} = ${money(r.fixedCosts)}.`,
+      'Break-even appointments = monthly fixed costs (rent and labor included) ÷ contribution per appointment.',
       'Break-even revenue = break-even appointments × average ticket (service price' + (v.retailRevenue > 0 ? ' + retail' : '') + ').',
       `Weekly = monthly ÷ 4.33 weeks; daily = weekly ÷ ${formatNumber(v.workingDaysPerWeek)} working days.`,
     ];
@@ -68,8 +84,9 @@ mountCalculator({
         ok: true, raw: r,
         view: {
           primary: { value: 'Not possible', label: 'Break-even at these prices', loss: true },
-          insight: 'Your current price does not cover the variable cost of this service. Increase the price or reduce the service cost before calculating break-even.',
-          cards: [{ label: 'Monthly fixed costs', value: money(r.fixedCosts), note: `${money(r.rent)} rent + ${money(r.otherFixedCosts)} other` }, { label: r.reason === 'zero' ? 'Contribution per appointment' : 'Loss per appointment (before fixed costs)', value: money(contribution.amount, { cents: true }), loss: r.reason !== 'zero' }],
+          insight: `Your current price does not cover the variable cost${owner && r.commission > 0 ? ' and commission' : ''} of this service. Increase the price or reduce the service cost before calculating break-even.`,
+          cards: [{ label: 'Monthly fixed costs', value: money(r.fixedCosts), note: fixedNote }, laborCard,
+            { label: r.reason === 'zero' ? 'Contribution per appointment' : 'Loss per appointment (before fixed costs)', value: money(contribution.amount, { cents: true }), loss: r.reason !== 'zero' }],
           method,
           share: { value: 'Not yet', label: 'Break-even', insight: 'Prices need to cover costs before a business can break even.' },
         },
@@ -77,7 +94,7 @@ mountCalculator({
     }
     const insight = r.fixedCosts === 0
       ? 'With no fixed costs, every appointment that covers its own costs is already profitable.'
-      : `You need about ${formatNumber(r.appointmentsWhole, 0)} appointments a month, roughly ${formatNumber(r.dailyAppointments, 1)} a day, to cover your rent and other fixed costs.`;
+      : `You need about ${formatNumber(r.appointmentsWhole, 0)} appointments a month, roughly ${formatNumber(r.dailyAppointments, 1)} a day, to cover your rent, ${laborWords} and other fixed costs.`;
     return {
       ok: true, raw: r,
       view: {
@@ -87,11 +104,12 @@ mountCalculator({
           { label: 'Appointments a week', value: formatNumber(r.weeklyAppointments, 1) },
           { label: 'Appointments a day', value: formatNumber(r.dailyAppointments, 1) },
           { label: 'Contribution per appointment', value: money(r.contribution, { cents: true }), note: `${formatPercent(r.contributionMargin)} of each ticket` },
-          { label: 'Monthly fixed costs', value: money(r.fixedCosts), note: `${money(r.rent)} rent + ${money(r.otherFixedCosts)} other` },
+          { label: 'Monthly fixed costs', value: money(r.fixedCosts), note: fixedNote },
+          laborCard,
         ],
         insight, method,
-        extraNode: r.fixedCosts > 0 ? chartNode(r) : null,
-        share: { value: formatNumber(r.appointmentsWhole, 0), label: 'appointments a month to break even', insight: 'Know the number that covers the rent.' },
+        extraNode: r.fixedCosts > 0 ? () => chartNode(r) : null,
+        share: { value: formatNumber(r.appointmentsWhole, 0), label: 'appointments a month to break even', insight: `Know how many ${sig.text} appointments cover the rent and the pay.` },
       },
     };
   },

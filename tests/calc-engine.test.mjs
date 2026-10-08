@@ -1,7 +1,7 @@
 // node --test tests/  — the calculator engine (assets/calc/core): spec §28 Sprint-1 cases, validation, no NaN/Infinity.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateServicePricing, calculateHourlyRate, calculateEmployeeEarnings, RANGE_HEADROOM, MIN_PROFIT_MARGIN } from '../assets/calc/core/pricing.js';
+import { calculateServicePricing, calculateHourlyRate, calculateEmployeeEarnings, RANGE_HEADROOM, MIN_PROFIT_MARGIN, EXAMPLE_SERVICE_MINUTES } from '../assets/calc/core/pricing.js';
 import { calculateBreakEven, breakEvenChart } from '../assets/calc/core/breakeven.js';
 import { calculateServiceProfitability } from '../assets/calc/core/profit.js';
 import { calculateConsumableCost, calculateServiceCost } from '../assets/calc/core/costs.js';
@@ -138,7 +138,7 @@ test('break-even: retail adds its own contribution; bad inputs are errors', () =
 // ---------- hourly rate ----------
 test('hourly rate: income after tax + expenses spread over client hours', () => {
   const r = calculateHourlyRate({ desiredAnnualIncome: 60000, workingWeeksPerYear: 48, workingDaysPerWeek: 5, hoursPerDay: 8,
-    nonClientHoursPerDay: 2, annualExpenses: 12000, taxRate: 0.25, exampleServiceMinutes: 120 });
+    nonClientHoursPerDay: 2, annualExpenses: 12000, taxRate: 0.25, exampleServiceMinutes: 90 });
   near(r.preTaxIncome, 80000);
   near(r.estimatedTaxes, 20000);
   near(r.annualRevenue, 92000);
@@ -147,7 +147,12 @@ test('hourly rate: income after tax + expenses spread over client hours', () => 
   near(r.annualClientHours, 1440);
   near(r.perWorkingHour, 92000 / 1920);
   near(r.perClientHour, 92000 / 1440);
-  near(r.exampleServiceRevenue, 2 * 92000 / 1440);
+  near(r.exampleServiceRevenue, 1.5 * 92000 / 1440, 'a 90-minute example service');
+  assert.equal(EXAMPLE_SERVICE_MINUTES, 90);
+  const byDefault = calculateHourlyRate({ desiredAnnualIncome: 60000, nonClientHoursPerDay: 2, annualExpenses: 12000, taxRate: 0.25 });
+  assert.equal(byDefault.exampleServiceMinutes, 90, 'the example service defaults to 90 minutes');
+  near(byDefault.exampleServiceRevenue, 1.5 * byDefault.perClientHour);
+  assert.equal(calculateEmployeeEarnings({ desiredAnnualIncome: 45000, payType: 'commission', commissionRate: 0.4 }).exampleServiceMinutes, 90);
   assert.ok(calculateHourlyRate({ desiredAnnualIncome: 60000, hoursPerDay: 8, nonClientHoursPerDay: 8 }).errors.nonClientHoursPerDay);
   assert.ok(calculateHourlyRate({ desiredAnnualIncome: 60000, taxRate: 1 }).errors.taxRate);
 });
@@ -166,7 +171,10 @@ test('service profitability: profitable but below the hourly target', () => {
 });
 
 test('service profitability: loss, break-even and meeting the target', () => {
-  assert.equal(calculateServiceProfitability({ price: 50, durationMinutes: 60, productCost: 40, laborCost: 20 }).status, 'loss');
+  const loss = calculateServiceProfitability({ price: 50, durationMinutes: 60, productCost: 40, laborHourly: 20 });
+  assert.equal(loss.status, 'loss');
+  near(loss.labor, 20, '$20/hour × 1 hour of labor');
+  near(loss.profit, -10);
   assert.equal(calculateServiceProfitability({ price: 50, durationMinutes: 60, productCost: 50 }).status, 'even');
   const owner = calculateServiceProfitability({ price: 200, durationMinutes: 60, productCost: 10, commissionRate: 0.4, targetHourly: 100 });
   near(owner.commission, 80);
@@ -230,12 +238,15 @@ test('no NaN, Infinity or undefined: every engine result is finite or a named er
     const results = [
       calculateServicePricing({ currentPrice: pick(i, 1), durationMinutes: pick(i, 2), productCost: pick(i, 3), targetHourly: pick(i, 4),
         monthlyFixed: pick(i, 5), monthlyVariable: pick(i, 6), monthlyAppointments: pick(i, 7), processingRate: toRate(pick(i, 8)),
-        profitMargin: toRate(pick(i, 9)), nonClientHoursPerMonth: pick(i, 10) }),
-      calculateBreakEven({ fixedCosts: pick(i, 1), servicePrice: pick(i, 2), variableCost: pick(i, 3), processingRate: toRate(pick(i, 4)) }),
+        profitMargin: toRate(pick(i, 9)), nonClientHoursPerMonth: pick(i, 10), commissionRate: toRate(pick(i, 11)) }),
+      calculateBreakEven({ fixedCosts: pick(i, 1), servicePrice: pick(i, 2), variableCost: pick(i, 3), processingRate: toRate(pick(i, 4)),
+        monthlyPay: pick(i, 5), monthlyPayroll: pick(i, 6), ownerPay: pick(i, 7), commissionRate: toRate(pick(i, 8)) }),
       calculateHourlyRate({ desiredAnnualIncome: pick(i, 1), workingWeeksPerYear: pick(i, 2), workingDaysPerWeek: pick(i, 3),
-        hoursPerDay: pick(i, 4), nonClientHoursPerDay: pick(i, 5), annualExpenses: pick(i, 6), taxRate: toRate(pick(i, 7)) }),
+        hoursPerDay: pick(i, 4), nonClientHoursPerDay: pick(i, 5), annualExpenses: pick(i, 6), taxRate: toRate(pick(i, 7)), monthlyPayroll: pick(i, 8) }),
+      calculateServiceCost({ items: [{ category: 'supply', quantity: 1, unitCost: pick(i, 1) }], monthlyRent: pick(i, 2), hoursPerMonth: pick(i, 3),
+        durationMinutes: pick(i, 4), monthlyPay: pick(i, 5), providerWage: pick(i, 6), commissionRate: toRate(pick(i, 7)), price: pick(i, 8) }),
       calculateServiceProfitability({ price: pick(i, 1), durationMinutes: pick(i, 2), productCost: pick(i, 3), processingRate: toRate(pick(i, 4)),
-        targetHourly: pick(i, 5), commissionRate: toRate(pick(i, 6)) }),
+        targetHourly: pick(i, 5), commissionRate: toRate(pick(i, 6)), laborHourly: pick(i, 7) }),
       calculateConsumableCost([{ category: 'product', quantity: pick(i, 1), unitCost: pick(i, 2) }]),
     ];
     for (const r of results) {
@@ -463,4 +474,160 @@ test('employee: bad pay type, blank (NaN) goal, negative tips and 100% tax are n
     if (r.ok) assert.equal(hasBadNumber(r), false, JSON.stringify(r));
     else assert.ok(Object.values(r.errors).every((m) => typeof m === 'string' && m.length > 0));
   }
+});
+
+// ---------- labor (solo pay, owner payroll, commission) ----------
+test('labor in break-even (solo): your monthly pay is a fixed cost', () => {
+  const r = calculateBreakEven({ monthlyRent: 1000, monthlyPay: 2000, fixedCosts: 0, servicePrice: 100, variableCost: 20, processingRate: 0.03 });
+  near(r.laborFixed, 2000);
+  near(r.fixedCosts, 3000, 'rent + your pay');
+  near(r.contribution, 77, 'pay is not a per-service cost');
+  near(r.appointments, 3000 / 77);
+  assert.ok(calculateBreakEven({ monthlyPay: -1, fixedCosts: 0, servicePrice: 100 }).errors.monthlyPay);
+});
+
+test('labor in break-even (owner): payroll + owner pay are fixed; commission comes off each appointment', () => {
+  const r = calculateBreakEven({ monthlyRent: 2000, monthlyPayroll: 6000, ownerPay: 4000, fixedCosts: 1000, servicePrice: 100,
+    variableCost: 20, processingRate: 0.03, commissionRate: 0.4 });
+  near(r.laborFixed, 10000);
+  near(r.fixedCosts, 13000);
+  near(r.commission, 40);
+  near(r.contribution, 97 - 40 - 20, 'net price − commission − variable cost');
+  near(r.appointments, 13000 / 37);
+  const chart = breakEvenChart(r);
+  const at = (line, x) => line[0][1] + (line[1][1] - line[0][1]) * (x / chart.maxAppointments);
+  near(at(chart.revenue, r.appointments), at(chart.cost, r.appointments), 'lines still cross at break-even');
+  // commission can make break-even impossible: zero and negative contribution are named, never divided by
+  const zero = calculateBreakEven({ fixedCosts: 1000, servicePrice: 100, variableCost: 50, commissionRate: 0.5 });
+  assert.equal(zero.possible, false);
+  assert.equal(zero.reason, 'zero');
+  const neg = calculateBreakEven({ fixedCosts: 1000, monthlyPayroll: 5000, servicePrice: 100, variableCost: 20, processingRate: 0.03, commissionRate: 0.8 });
+  assert.equal(neg.possible, false);
+  assert.equal(neg.reason, 'negative');
+  assert.equal(hasBadNumber(neg), false);
+  for (const bad of [1, 1.2, -0.1, NaN]) assert.ok(calculateBreakEven({ fixedCosts: 0, servicePrice: 100, commissionRate: bad }).errors.commissionRate, String(bad));
+});
+
+test('labor in hourly rate (owner): monthly payroll × 12 is an annual expense; solo pay is the income goal', () => {
+  const S = { desiredAnnualIncome: 60000, workingWeeksPerYear: 48, workingDaysPerWeek: 5, hoursPerDay: 8, nonClientHoursPerDay: 2, monthlyRent: 1000, annualExpenses: 6000, taxRate: 0.25 };
+  const owner = calculateHourlyRate({ ...S, monthlyPayroll: 5000 });
+  near(owner.annualPayroll, 60000);
+  near(owner.totalExpenses, 12000 + 60000 + 6000);
+  near(owner.annualRevenue, 80000 + 78000);
+  near(calculateHourlyRate(S).annualPayroll, 0, 'no payroll entered');
+  assert.ok(calculateHourlyRate({ ...S, monthlyPayroll: -5 }).errors.monthlyPayroll);
+});
+
+test('labor in service pricing (owner): wage × hours + commission, grossed up like processing', () => {
+  // cost + wage = 10 + 50 = 60; P = 60 / (1 − 0.4 commission − 0.3 margin) = 200
+  const r = calculateServicePricing({ ...BASE, commissionRate: 0.4 });
+  near(r.recommendedPrice, 200);
+  near(r.commissionAtRecommended, 80);
+  near(r.laborAtRecommended, 50 + 80);
+  near(r.recommended.commission, 80);
+  near(r.recommended.profit, 0.3 * 200, 'the margin survives the commission');
+  const withFees = calculateServicePricing({ ...BASE, commissionRate: 0.4, processingRate: 0.03 });
+  near(withFees.recommendedPrice, 60 / (1 - 0.03 - 0.4 - 0.3));
+  const P = withFees.recommendedPrice;
+  near(P - P * 0.03 - P * 0.4 - 10 - 50, 0.3 * P, 'processing + commission + margin all come out of the final price');
+  near(withFees.breakEvenPrice, 10 / 0.97, 'break-even pays labor $0');
+  // a current price is judged after commission too
+  near(calculateServicePricing({ ...BASE, commissionRate: 0.4, currentPrice: 150 }).current.profit, 150 - 60 - 60);
+});
+
+test('labor in service pricing: processing + commission + margin of 100% or more is rejected', () => {
+  for (const [processingRate, commissionRate, profitMargin] of [[0.3, 0.4, 0.3], [0.03, 0.67, 0.3], [0.1, 0.6, 0.35], [0, 0.7, 0.3]]) {
+    const r = calculateServicePricing({ ...BASE, processingRate, commissionRate, profitMargin });
+    assert.equal(r.ok, false, `${processingRate}/${commissionRate}/${profitMargin}`);
+    assert.match(r.errors.commissionRate, /commission and profit margin together must be below 100%/);
+    assert.match(r.errors.profitMargin, /below 100%/);
+  }
+  assert.equal(calculateServicePricing({ ...BASE, processingRate: 0.03, commissionRate: 0.66, profitMargin: 0.3 }).ok, true, '99% is still a price');
+  assert.ok(calculateServicePricing({ ...BASE, commissionRate: 1 }).errors.commissionRate);
+  assert.ok(calculateServicePricing({ ...BASE, commissionRate: -0.1 }).errors.commissionRate);
+});
+
+test('labor in service pricing (solo): your pay per hour is the only labor, never added twice', () => {
+  const r = calculateServicePricing({ ...BASE, monthlyPay: 4000, providerWage: 30 });
+  near(r.timeValue, 50, 'pay per hour × 1 hour; monthly pay or a wage are not inputs here');
+  near(r.laborAtRecommended, 50);
+  near(r.recommendedPrice, 60 / 0.7);
+  near(r.commissionAtRecommended, 0);
+});
+
+test('labor in service profitability: solo pay per hour × duration; owner wage × duration + commission', () => {
+  const solo = calculateServiceProfitability({ price: 120, durationMinutes: 90, productCost: 8, supplyCost: 4, laborHourly: 40 });
+  near(solo.laborTime, 60);
+  near(solo.labor, 60);
+  near(solo.totalCost, 72);
+  near(solo.profit, 48);
+  near(solo.earningsPerHour, (48 + 60) / 1.5, 'your pay + profit, per hour');
+  const owner = calculateServiceProfitability({ price: 120, durationMinutes: 60, productCost: 8, laborHourly: 20, commissionRate: 0.25, processingRate: 0.03 });
+  near(owner.laborTime, 20);
+  near(owner.commission, 30);
+  near(owner.labor, 50);
+  near(owner.totalCost, 8 + 3.6 + 50);
+  near(owner.profit, 120 - 61.6);
+  assert.ok(calculateServiceProfitability({ price: 120, durationMinutes: 60, laborHourly: -1 }).errors.laborHourly);
+});
+
+test('labor in cost per service: solo monthly pay ÷ hours × duration; owner wage × duration + commission of the price', () => {
+  const items = [{ category: 'product', quantity: 1, unitCost: 8 }, { category: 'supply', quantity: 2, unitCost: 1.5 }];
+  const solo = calculateServiceCost({ items, ...FACIAL, monthlyPay: 3200 });
+  near(solo.payPerHour, 20);
+  near(solo.labor, 30, '$3,200 ÷ 160 hours × 1.5 hours');
+  near(solo.trueCost, 11 + 18.75 + 30, 'product + supply + rent + labor');
+  const owner = calculateServiceCost({ items, ...FACIAL, providerWage: 20, commissionRate: 0.4, price: 120 });
+  near(owner.laborTime, 30);
+  near(owner.commission, 48);
+  near(owner.labor, 78);
+  near(owner.trueCost, 11 + 18.75 + 78);
+  assert.equal(owner.commissionNeedsPrice, false);
+  const noPrice = calculateServiceCost({ items, ...FACIAL, providerWage: 20, commissionRate: 0.4 });
+  assert.equal(noPrice.commissionNeedsPrice, true, 'commission without a price is noted, not guessed');
+  near(noPrice.commission, 0);
+  near(noPrice.trueCost, 11 + 18.75 + 30);
+  assert.ok(calculateServiceCost({ items, monthlyPay: 3200 }).errors.durationMinutes, 'labor is shared by time, so it needs the duration');
+  assert.ok(calculateServiceCost({ items, ...FACIAL, commissionRate: 1, price: 100 }).errors.commissionRate);
+  near(calculateServiceCost({ items }).labor, 0, 'no labor entered, none added');
+});
+
+// ---------- employee hourly: current wage vs the wage the goal needs ----------
+test('employee hourly current wage: below the goal shows the raise per hour and the take-home gap', () => {
+  const r = calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: 25 });
+  near(r.requiredWage, 31.25);
+  assert.equal(r.current.meetsGoal, false);
+  near(r.current.takeHome, 25 * 1920 * 0.75);
+  near(r.current.takeHomeShort, 45000 - 36000);
+  near(r.current.raisePerHour, 6.25);
+  near(r.current.surplusPerHour, 0);
+  near(r.current.takeHomeSurplus, 0);
+  // tips count toward current take-home as well
+  const tips = calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: 25, monthlyTips: 500 });
+  near(tips.current.takeHome, (25 * 1920 + 6000) * 0.75);
+  near(tips.current.raisePerHour, 54000 / 1920 - 25);
+});
+
+test('employee hourly current wage: meeting the goal shows the surplus, never a negative raise', () => {
+  const r = calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: 35 });
+  assert.equal(r.current.meetsGoal, true);
+  near(r.current.raisePerHour, 0);
+  near(r.current.takeHomeShort, 0);
+  near(r.current.surplusPerHour, 3.75);
+  near(r.current.takeHome, 35 * 1920 * 0.75);
+  near(r.current.takeHomeSurplus, 50400 - 45000);
+  assert.equal(calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: 31.25 }).current.meetsGoal, true, 'exactly the wage needed meets it');
+  for (let w = 0.5; w < 80; w += 1.75) {
+    const c = calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: w, monthlyTips: 300 }).current;
+    for (const k of ['raisePerHour', 'takeHomeShort', 'surplusPerHour', 'takeHomeSurplus']) assert.ok(c[k] >= 0, `${k} at $${w}`);
+  }
+});
+
+test('employee hourly current wage: blank shows only the required wage; negative is an error; ignored for commission', () => {
+  const r = calculateEmployeeEarnings({ ...EMP, payType: 'hourly' });
+  assert.equal(r.current, null);
+  near(r.requiredWage, 31.25);
+  assert.equal(calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: 0 }).current, null, 'a blank field reads as 0');
+  assert.ok(calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: -1 }).errors.currentHourlyWage);
+  assert.equal(calculateEmployeeEarnings({ ...EMP, payType: 'commission', commissionRate: 0.4, currentHourlyWage: -1 }).ok, true);
 });

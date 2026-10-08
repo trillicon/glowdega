@@ -5,15 +5,17 @@ import { allocateRent, DEFAULT_HOURS_PER_MONTH } from './overhead.js';
 /**
  * revenue     = price
  * rent share  = monthly rent / hours worked per month × service hours   (allocateRent)
- * total cost  = product + supplies + rent share + other overhead + price × processing + labor + price × commission
+ * labor       = hourly labor rate × service hours + price × commission
+ *               solo: your pay per hour × hours (no commission);  owner: provider's hourly wage × hours + commission
+ * total cost  = product + supplies + rent share + other overhead + price × processing + labor
  * profit      = revenue − total cost (negative = loss)
  * per hour    = ÷ (duration / 60)
- * Status compares profit per hour with the target hourly rate when one is given.
+ * Status compares profit per hour with the target hourly profit when one is given.
  */
 export function calculateServiceProfitability({
   price, durationMinutes, productCost = 0, supplyCost = 0, overhead = 0,
   monthlyRent = 0, hoursPerMonth = DEFAULT_HOURS_PER_MONTH,
-  processingRate = 0, laborCost = 0, commissionRate = 0, targetHourly = 0,
+  processingRate = 0, laborHourly = 0, commissionRate = 0, targetHourly = 0,
 }) {
   const errors = guard([
     ['price', price, (v) => v > 0, 'Enter a service price greater than $0.'],
@@ -22,9 +24,9 @@ export function calculateServiceProfitability({
     ['supplyCost', supplyCost, (v) => v >= 0, 'Enter a supply cost of $0 or more.'],
     ['overhead', overhead, (v) => v >= 0, 'Enter other overhead of $0 or more.'],
     ['processingRate', processingRate, (v) => v >= 0 && v < 1, 'Enter a payment processing rate below 100%.'],
-    ['laborCost', laborCost, (v) => v >= 0, 'Enter a labor cost of $0 or more.'],
+    ['laborHourly', laborHourly, (v) => v >= 0, 'Enter an hourly pay or wage of $0 or more.'],
     ['commissionRate', commissionRate, (v) => v >= 0 && v < 1, 'Enter a commission rate below 100%.'],
-    ['targetHourly', targetHourly, (v) => v >= 0, 'Enter a target hourly rate of $0 or more.'],
+    ['targetHourly', targetHourly, (v) => v >= 0, 'Enter a target profit per hour of $0 or more.'],
   ]);
   const rent = allocateRent({ monthlyRent, hoursPerMonth, durationMinutes: errors.durationMinutes ? 0 : durationMinutes });
   if (!rent.ok) Object.assign(errors, rent.errors);
@@ -33,7 +35,9 @@ export function calculateServiceProfitability({
   const hours = durationMinutes / 60;
   const processing = price * processingRate;
   const commission = price * commissionRate;
-  const totalCost = productCost + supplyCost + rentShare + overhead + processing + laborCost + commission;
+  const laborTime = laborHourly * hours;
+  const labor = laborTime + commission;
+  const totalCost = productCost + supplyCost + rentShare + overhead + processing + labor;
   const profit = price - totalCost;
   const profitPerHour = profit / hours;
   let status;
@@ -42,8 +46,11 @@ export function calculateServiceProfitability({
   else if (targetHourly > 0) status = profitPerHour + 0.005 >= targetHourly ? 'meets-target' : 'below-target';
   else status = 'profitable';
   return {
-    ok: true, revenue: price, hours, rentShare, rentPerHour: rent.rentPerHour, consumables: productCost + supplyCost, processing, commission, totalCost, profit,
+    ok: true, revenue: price, hours, rentShare, rentPerHour: rent.rentPerHour, consumables: productCost + supplyCost, processing, commission,
+    laborHourly, laborTime, labor, totalCost, profit,
     margin: profit / price, profitPerHour, revenuePerHour: price / hours, targetHourly, status,
+    // a solo provider keeps both their pay and the profit: everything left after costs, per hour
+    earningsPerHour: (profit + laborTime) / hours,
     hourlyGap: targetHourly > 0 ? targetHourly - profitPerHour : 0,
   };
 }
