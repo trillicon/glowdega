@@ -38,7 +38,7 @@ function addRow(root, category = 'product') {
     const id = `row${n}-${input.dataset.col}`;
     input.id = id;
     row.querySelector(`label[data-for="${input.dataset.col}"]`)?.setAttribute('for', id);
-    const err = input.parentElement.querySelector('.calc-error');
+    const err = input.closest('.calc-row__cell').querySelector('.calc-error'); // the $-wrapped input's error sits beside its wrapper
     if (err) { err.id = id + '-error'; input.setAttribute('aria-describedby', err.id); }
   }
   row.querySelector('select').value = category;

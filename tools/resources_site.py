@@ -20,7 +20,7 @@ SIG = '<span data-prof="signature">90-minute peel</span>'
 
 esc = lambda s: html.escape(str(s), quote=True)
 
-# ---------- the ten calculators (hub cards). live=False: Sprint 2, shown as "Coming soon" with no link ----------
+# ---------- the ten calculators (hub cards). live=False would show a "Coming soon" card with no link ----------
 CALCS = [
     dict(slug='service-pricing', cat='Pricing', live=True, name='Service Pricing Calculator', audiences='solo owner',
          desc='Find a price that covers your costs, values your time, and supports your goals.', cta='Calculate Your Price',
@@ -34,17 +34,18 @@ CALCS = [
          desc='See what a single service really earns, per appointment and per hour.', cta='Check a Service'),
     dict(slug='break-even', cat='Profitability', live=True, name='Break-Even Calculator', audiences='solo owner',
          desc='Find how many appointments a month cover your rent and other fixed costs.', cta='Find Your Break-Even'),
-    dict(slug='profit-take-home', cat='Profitability', live=False, name='Profit & Take-Home Calculator', audiences='solo employee owner',
-         desc='Separate business profit from what you actually take home.',
+    dict(slug='profit-take-home', cat='Profitability', live=True, name='Profit & Take-Home Calculator', audiences='solo employee owner',
+         desc='Separate business profit from what you actually take home.', cta='See Your Take-Home',
          desc_employee='Estimate your take-home pay from commission, wages, tips and bonuses.'),
-    dict(slug='menu-profitability', cat='Profitability', live=False, name='Service Menu Profitability Analyzer', audiences='solo owner',
-         desc='Rank every service on your menu by profit, margin and profit per hour.'),
-    dict(slug='capacity-clients', cat='Growth', live=False, name='Capacity & Clients Calculator', audiences='solo employee owner',
-         desc='See how many clients a month your revenue goal really takes.'),
-    dict(slug='price-increase', cat='Growth', live=False, name='Price Increase Calculator', audiences='solo owner',
-         desc='See what a price increase is worth, and how many clients you could lose and still come out even.'),
-    dict(slug='discount-promotion', cat='Promotions', live=False, name='Discount & Promotion Calculator', audiences='solo owner',
-         desc='Find out what a discount really costs before you run the promo.'),
+    dict(slug='menu-profitability', cat='Profitability', live=True, name='Service Menu Profitability Analyzer', audiences='solo owner',
+         desc='Rank every service on your menu by profit, margin and profit per hour.', cta='Analyze Your Menu'),
+    dict(slug='capacity-clients', cat='Growth', live=True, name='Capacity & Clients Calculator', audiences='solo employee owner',
+         desc='See how many clients a month your revenue goal really takes.', cta='Count Your Clients',
+         desc_employee='See how many clients a month your service revenue goal takes, and the hours behind them.'),
+    dict(slug='price-increase', cat='Growth', live=True, name='Price Increase Calculator', audiences='solo owner',
+         desc='See what a price increase is worth, and how many clients you could lose and still come out even.', cta='Test a Price Increase'),
+    dict(slug='discount-promotion', cat='Promotions', live=True, name='Discount & Promotion Calculator', audiences='solo owner',
+         desc='Find out what a discount really costs before you run the promo.', cta='Check a Discount'),
 ]
 CATEGORIES = ['Pricing', 'Profitability', 'Growth', 'Promotions']
 MORE = ['Pricing Guides', 'Business Templates', 'Marketing Tools']
@@ -80,9 +81,9 @@ def MONTHLY_PAY(hint='What you pay yourself each month, before tax.'):
 def PAYROLL(hint='Wages and payroll taxes for your team each month.'):
     return F('monthlyPayroll', 'Monthly payroll (wages + payroll taxes)', 'money', 'monthly payroll', max=MONEY_MAX, placeholder='6,500',
              hint=hint, types=['owner'])
-def OWNER_PAY():
+def OWNER_PAY(hint='What you pay yourself each month. Leave blank if it is already in payroll.'):
     return F('ownerPay', 'Your monthly owner pay', 'money', 'your monthly owner pay', max=MONEY_MAX, placeholder='5,000',
-             hint='What you pay yourself each month. Leave blank if it is already in payroll.', types=['owner'])
+             hint=hint, types=['owner'])
 def COMMISSION(hint='The share of each service price paid to the provider.'):
     return PCT('commissionRate', 'Commission paid per service (%)', 'a commission', placeholder='40', hint=hint, types=['owner'])
 def WAGE(hint='What you pay the provider per hour. Leave blank if they are paid on commission only.'):
@@ -104,8 +105,8 @@ PAGES = {
                'Every recommended price keeps a profit margin of at least 30%, so the business earns something after costs and pay. The result shows the lowest price that covers your costs and labor (break-even), the recommended price that adds your profit margin, and how your current price compares. Treat it as a starting point: local demand, your experience and your results still matter.'],
         types=['solo', 'employee', 'owner'], unsupported=['employee'],
         type_notes={'employee': 'Service prices are usually set by the business you work for. To see what your own time '
-                    'needs to earn, use <a href="../hourly-rate/?type=employee">What Is Your Time Worth?</a> A Profit &amp; '
-                    'Take-Home calculator for employees is coming soon.'},
+                    'needs to earn, use <a href="../hourly-rate/?type=employee">What Is Your Time Worth?</a> To see what your pay, '
+                    'commission and tips leave you, use the <a href="../profit-take-home/?type=employee">Profit &amp; Take-Home Calculator</a>.'},
         basic=[F('currentPrice', 'Current service price', 'money', 'a current price', max=MONEY_MAX, placeholder='95',
                  hint='Leave blank for a new service.'),
                F('durationMinutes', 'Service duration', 'minutes', 'a service duration', required=True, min_exclusive=True,
@@ -238,6 +239,137 @@ PAGES = {
                   F('workingDaysPerWeek', 'Working days per week', 'number', 'working days per week', required=True,
                     min_exclusive=True, max=7, value='5')],
         crumb_cat='Profitability'),
+    'profit-take-home': dict(
+        title='Profit & Take-Home Pay Calculator for Beauty Pros | GLOWDEGA', h1='Profit & Take-Home Calculator',
+        desc='Separate business profit from the pay you take home. For salon and studio owners, solo beauty pros, and employees '
+             'paid hourly or on commission.',
+        intro=['Money coming in is not the same as money you keep. A lash studio can book $12,000 of services in a month and still leave its owner short once rent, products, payroll and taxes are paid. This calculator separates business profit from the pay that actually reaches you.',
+               'Solo providers and owners enter a month of service revenue, product and service costs, rent, other fixed expenses and an estimated tax rate. Solo providers add their monthly pay; owners add payroll, commission paid to providers and their own owner pay. Under “Customize your calculation” you can add retail sales and variable expenses. How the numbers fit together: your pay is a business expense, business profit is what remains after every expense including your pay, and your take-home is your pay plus that profit, minus estimated taxes. Your pay is counted once, never twice.',
+               'Employees skip all of that. A barber on commission or a nail technician paid by the hour enters their pay type, service revenue, commission rate or wage and hours, tips and bonuses, and sees gross earnings, estimated taxes, take-home pay and effective hourly earnings. Tax figures are rough estimates, not tax advice.'],
+        types=['solo', 'employee', 'owner'], unsupported=[],
+        type_notes={'employee': 'As an employee, your take-home comes from your pay, not the business’s profit. The business pays '
+                    'the rent and expenses, so you won’t see them here. Choose how you are paid.'},
+        basic=[F('serviceRevenue', 'Monthly service revenue', 'money', 'monthly service revenue', required=True, max=MONEY_MAX,
+                 placeholder='12,000', hint='Everything clients paid for services this month, before any costs.', types=['solo', 'owner']),
+               CHOICE('payType', 'How are you paid?', [('hourly', 'Hourly'), ('commission', 'Commission'), ('mixed', 'Hourly + commission')],
+                      types=['employee']),
+               F('revenueGenerated', 'Monthly service revenue you generate', 'money', 'the monthly service revenue you generate', required=True,
+                 min_exclusive=True, max=MONEY_MAX, placeholder='9,000', hint='The total price of the services you performed this month.',
+                 types=['employee'], when='payType:commission mixed'),
+               PCT('payCommissionRate', 'Your commission rate', 'a commission rate', required=True, min_exclusive=True, placeholder='40',
+                   hint='Your share of the service revenue you generate.', types=['employee'], when='payType:commission mixed'),
+               F('hourlyWage', 'Your hourly wage', 'money', 'an hourly wage', required=True, min_exclusive=True, max=MONEY_MAX, placeholder='18',
+                 types=['employee'], when='payType:hourly mixed'),
+               F('hoursWorked', 'Hours worked per month', 'hours', 'the hours you work per month', required=True, min_exclusive=True, max=744,
+                 placeholder='140', hint='Paid hours this month.', types=['employee'], when='payType:hourly mixed'),
+               F('hoursOptional', 'Hours worked per month', 'hours', 'the hours you work per month', max=744, placeholder='140',
+                 hint='Add them to see your effective hourly earnings.', types=['employee'], when='payType:commission'),
+               F('tips', 'Monthly tips', 'money', 'monthly tips', max=MONEY_MAX, placeholder='400', hint='Before tax.', types=['employee']),
+               F('productCosts', 'Product/service costs', 'money', 'product/service costs', max=MONEY_MAX, placeholder='1,200',
+                 hint='Products and supplies used in services, plus what the retail you sold cost you.', types=['solo', 'owner']),
+               RENT(hint='Rent or suite fee for the month. It is its own expense, kept out of other fixed expenses.'),
+               F('fixedExpenses', 'Other monthly fixed expenses', 'money', 'other monthly fixed expenses', max=MONEY_MAX, placeholder='600',
+                 hint='Other fixed expenses (not rent or pay): insurance, software, booking app, loan payments.', types=['solo', 'owner']),
+               MONTHLY_PAY('What you pay yourself this month. It is a business expense, and it comes back to you in your take-home, so it is counted once.'),
+               PAYROLL('Wages and payroll taxes for your team. Leave your own pay out; it has its own field.'),
+               COMMISSION('The share of service revenue paid to providers. It is a business expense.'),
+               OWNER_PAY('What you pay yourself this month. It is a business expense, and it comes back to you in your take-home, so it is counted once.'),
+               PCT('taxRate', 'Estimated tax rate', 'an estimated tax rate', placeholder='25',
+                   hint='A rough combined rate on what you earn. A tax professional can give you yours.')],
+        advanced=[F('retailRevenue', 'Monthly retail revenue', 'money', 'retail revenue', max=MONEY_MAX, placeholder='800',
+                    hint='Products sold to clients. Their cost goes in product/service costs.', types=['solo', 'owner']),
+                  F('variableExpenses', 'Monthly variable expenses', 'money', 'monthly variable expenses', max=MONEY_MAX, placeholder='450',
+                    hint='Other expenses (not rent) that rise and fall with how busy you are: card fees, laundry, marketing.', types=['solo', 'owner']),
+                  F('bonuses', 'Monthly bonuses', 'money', 'monthly bonuses', max=MONEY_MAX, placeholder='150',
+                    hint='Retail commission, rebooking or other bonuses, before tax.', types=['employee'])],
+        crumb_cat='Profitability'),
+    'capacity-clients': dict(
+        title='Capacity & Clients Calculator for Beauty Businesses | GLOWDEGA', h1='Capacity & Clients Calculator',
+        desc='Turn a monthly revenue goal into clients per month, week and day, and the hours it takes, with a comparison of '
+             'different average tickets.',
+        intro=['A revenue goal is easier to plan for once it becomes a number of clients. $8,000 a month at a $100 average ticket is 80 clients; at $160 it is 50. This calculator turns your monthly goal into clients a month, a week and a day, and the hours with clients it takes.',
+               'It works for solo providers, employees on commission and owners planning a team’s bookings: a hairstylist growing a color book, a brow artist filling her weekdays, an esthetician deciding whether a higher ticket beats a fuller schedule. Enter your revenue goal, your average service price, how many days you work a month and whether your average service runs 60 or 90 minutes. Under “Customize your calculation” you can add how many clients you see now and your current average ticket to measure the gap.',
+               'The results show the clients and working hours your goal requires, plus a table of what the same goal takes at lower and higher average tickets. It plans bookings only: rent, pay and other costs belong in the Break-Even and Profit & Take-Home calculators.'],
+        types=['solo', 'employee', 'owner'], unsupported=[],
+        type_notes={'employee': 'Your goal here is the service revenue you bring in. To see what that revenue pays you, use the '
+                    '<a href="../profit-take-home/?type=employee">Profit &amp; Take-Home Calculator</a>.'},
+        basic=[F('revenueGoal', 'Monthly revenue goal', 'money', 'a monthly revenue goal', required=True, min_exclusive=True, max=100_000_000,
+                 placeholder='8,000', hint='The service revenue you want to bring in each month.', labels={'employee': 'Monthly service revenue goal'}),
+               F('averageTicket', 'Average service price', 'money', 'an average service price', required=True, min_exclusive=True, max=MONEY_MAX,
+                 placeholder='120', hint='What a client spends on services per visit, on average.',
+                 min_message='Enter an average service price greater than $0.'),
+               F('workingDaysPerMonth', 'Working days per month', 'number', 'working days per month', required=True, min_exclusive=True,
+                 max=31, value='20'),
+               CHOICE('serviceMinutes', 'Average service length', [('60', '60 minutes'), ('90', '90 minutes')])],
+        advanced=[F('currentClients', 'Current monthly clients', 'number', 'current monthly clients', max=100000, placeholder='55',
+                    hint='Clients you see in a typical month now.'),
+                  F('currentTicket', 'Current average ticket', 'money', 'a current average ticket', max=MONEY_MAX, placeholder='105',
+                    hint='Leave blank to use your average service price.')],
+        crumb_cat='Growth'),
+    'price-increase': dict(
+        title='Price Increase Calculator for Salons & Beauty Pros | GLOWDEGA', h1='Price Increase Calculator',
+        desc='See what raising a beauty service price adds to revenue and profit, and how many clients you could lose and still '
+             'bring in the same revenue.',
+        intro=['Raising prices feels risky because some clients may leave. The math is often kinder than the fear. If a 60-minute facial goes from $100 to $115, you could lose about one client in eight and still bring in the same service revenue, while working fewer hours.',
+               'This calculator is for solo providers and owners: a nail technician updating a gel manicure price, a barber moving a cut & beard up, a studio adjusting its menu one service at a time. Enter the current and new price, monthly appointments for the service, its length and product cost, your monthly rent and labor: your pay per hour if you work solo, or the provider’s wage and commission if you own the business. Rent is shared by the hour, and commission rises with the price. Under “Customize your calculation” you can add card processing and the share of clients you expect to lose.',
+               'You see current and new monthly revenue and profit, the monthly and yearly increase, and how many clients you could lose before revenue falls below where it is today. It is a planning estimate: how your clients respond is still yours to judge.'],
+        types=['solo', 'owner'], unsupported=[],
+        basic=[F('currentPrice', 'Current service price', 'money', 'a current service price', required=True, min_exclusive=True, max=MONEY_MAX,
+                 placeholder='100'),
+               F('newPrice', 'New service price', 'money', 'a new service price', required=True, min_exclusive=True, max=MONEY_MAX, placeholder='115'),
+               F('monthlyAppointments', 'Monthly appointments for this service', 'number', 'monthly appointments', required=True,
+                 min_exclusive=True, max=100000, placeholder='60'),
+               F('durationMinutes', 'Service duration', 'minutes', 'a service duration', required=True, min_exclusive=True, max=1440,
+                 placeholder='60', hint=f'Including set-up. For a {SIG}, enter <span data-prof="signature-minutes">90</span>.'),
+               F('productCost', 'Product/supply cost', 'money', 'a product/supply cost', max=MONEY_MAX, placeholder='12', hint='Per service.'),
+               RENT(),
+               PAY_PER_HOUR(hint='What an hour of your time should pay you. It is counted as labor, so profit is what is left after you are paid.'),
+               WAGE(), COMMISSION('The share of the price paid to the provider. It rises with the new price.')],
+        advanced=[HOURS(),
+                  PCT('processingRate', 'Payment processing', 'a payment processing rate', placeholder='2.9'),
+                  PCT('expectedLoss', 'Expected client loss', 'an expected client loss', placeholder='5',
+                      hint='The share of this service’s clients you think may leave. Leave blank to see how many you could lose.')],
+        crumb_cat='Growth'),
+    'discount-promotion': dict(
+        title='Discount & Promotion Calculator for Beauty Businesses | GLOWDEGA', h1='Discount & Promotion Calculator',
+        desc='Find what a discount really costs a beauty service: sale price, profit lost, the break-even discount and the deepest '
+             'discount that keeps your margin.',
+        intro=['A 20% discount does not cost 20% of your profit. It usually costs far more, because products, rent and labor cost the same whether the client pays full price or not. On a $150 service that earns $60 after costs, a $30 discount takes half the profit.',
+               'Use this before you run a new-client special, a holiday lash promotion or a brow and tint bundle. Solo providers and owners enter the regular price, the discount, the service length and product cost, monthly rent and labor: your pay per hour if you work solo, or the provider’s wage and commission if you own the business. Commission is paid on the sale price, so it falls with the discount. Add how many promotional appointments you expect to see the whole promotion. Under “Customize your calculation” you can add other overhead, card processing and your target profit margin (30% or more).',
+               'The result shows the sale price, profit before and after the discount, profit lost per appointment, the break-even discount where profit reaches $0 with labor paid, and the deepest discount that still keeps your target margin. It is an estimate to plan with, not a promise of how a promotion will perform.'],
+        types=['solo', 'owner'], unsupported=[],
+        basic=[F('regularPrice', 'Regular service price', 'money', 'a regular service price', required=True, min_exclusive=True, max=MONEY_MAX,
+                 placeholder='150'),
+               PCT('discountRate', 'Discount', 'a discount', required=True, placeholder='20', hint='0% shows the service at full price.'),
+               F('promoAppointments', 'Promotional appointments', 'number', 'promotional appointments', max=100000, placeholder='25',
+                 hint='How many discounted appointments you expect. Leave blank to see one appointment.'),
+               F('durationMinutes', 'Service duration', 'minutes', 'a service duration', required=True, min_exclusive=True, max=1440,
+                 placeholder='60', hint=f'Including set-up. For a {SIG}, enter <span data-prof="signature-minutes">90</span>.'),
+               F('productCost', 'Product/supply cost', 'money', 'a product/supply cost', max=MONEY_MAX, placeholder='15', hint='Per service.'),
+               RENT(),
+               PAY_PER_HOUR(hint='What an hour of your time should pay you. It is counted as labor, so the break-even discount still pays you.'),
+               WAGE(), COMMISSION('The share of the price paid to the provider. It is paid on the sale price, so it falls with the discount.')],
+        advanced=[HOURS(),
+                  F('overhead', 'Other overhead per appointment', 'money', 'other overhead', max=MONEY_MAX, placeholder='8',
+                    hint='Other monthly expenses (not rent) ÷ monthly appointments.'),
+                  PCT('processingRate', 'Payment processing', 'a payment processing rate', placeholder='2.9'),
+                  PCT('targetMargin', 'Target profit margin', 'a profit margin', required=True, min=30, value='30',
+                      min_message='Enter a profit margin of at least 30%.',
+                      hint='Profit kept after costs and pay, as a share of the sale price. 30% is the minimum; you can set it higher.')],
+        crumb_cat='Promotions'),
+    'menu-profitability': dict(
+        title='Service Menu Profitability Analyzer for Beauty Pros | GLOWDEGA', h1='Service Menu Profitability Analyzer',
+        desc='Compare every service on your beauty menu by profit, margin and profit per hour, with rent and labor included, '
+             'and see which ones lead and lag.',
+        intro=['Most menus have one service that earns far more per hour than the rest, and one that barely covers its costs. Side by side the difference is easy to see; on a booking screen it is not.',
+               'Add each service you offer: a 60-minute facial, a 90-minute root color, a lash fill, a gel manicure. Enter the price, how long it takes, and its product and supply cost. Solo providers add their pay per hour, which is counted as labor on every service. Owners add the provider’s hourly wage and commission for each service instead. Monthly rent is shared by the hour, so a 90-minute service carries more of it than a 60-minute one. Under “Customize your calculation” you can change the hours you work each month and add card processing.',
+               'The analyzer ranks your services by profit per appointment, profit per hour and margin, names the one earning the least per hour, and points out where a closer look at price or length may help. It is a starting point for a menu review, not a verdict on any service.'],
+        types=['solo', 'owner'], unsupported=[],
+        type_notes={'owner': 'Enter each service’s provider wage per hour and commission in its row. Leave the wage blank for '
+                    'commission-only providers.'},
+        basic=[RENT(), PAY_PER_HOUR(hint='Your labor cost per hour of service time, counted on every service.')],
+        advanced=[HOURS(), PCT('processingRate', 'Payment processing', 'a payment processing rate', placeholder='2.9')],
+        rows='menu', crumb_cat='Profitability'),
 }
 
 # ---------- rendering ----------
@@ -286,6 +418,28 @@ ROW_TEMPLATE = ('<template id="calc-row-template"><div class="calc-row">'
     '<button type="button" class="calc-row__remove" data-action="remove-row" aria-label="Remove this item">×</button>'
     '</div></template>')
 
+def _menu_cell(col, label, affix='', end='', owner=False, cls='calc-row__cell', placeholder=''):
+    mode = '' if col == 'name' else 'inputmode="decimal" '
+    inp = (f'<input data-col="{col}" type="text" {mode}autocomplete="off"'
+           + (f' placeholder="{placeholder}"' if placeholder else '') + '>')
+    if affix or end:
+        inp = ('<div class="calc-input">' + (f'<span class="calc-affix" aria-hidden="true">{affix}</span>' if affix else '') + inp
+               + (f'<span class="calc-affix calc-affix--end" aria-hidden="true">{end}</span>' if end else '') + '</div>')
+    return (f'<div class="{cls}"{" data-owner-only" if owner else ""}><label data-for="{col}">{label}</label>{inp}'
+            + ('' if col == 'name' else '<p class="calc-error" hidden></p>') + '</div>')
+
+# One service per row. Wage and commission are owners' labor; the page hides them unless "Business Owner" is chosen.
+MENU_ROW_TEMPLATE = ('<template id="calc-row-template"><div class="calc-row calc-row--menu">'
+    + _menu_cell('name', 'Service', cls='calc-row__cell calc-row__name', placeholder='e.g. Signature facial')
+    + _menu_cell('price', 'Price', affix='$', placeholder='120')
+    + _menu_cell('duration', 'Minutes', end='min', placeholder='60')
+    + _menu_cell('product', 'Product cost', affix='$', placeholder='9')
+    + _menu_cell('supply', 'Supply cost', affix='$', placeholder='3')
+    + _menu_cell('wage', 'Provider wage/hour', affix='$', owner=True, placeholder='20')
+    + _menu_cell('commission', 'Commission', end='%', owner=True, placeholder='40')
+    + '<button type="button" class="calc-row__remove" data-action="remove-row" aria-label="Remove this service">×</button>'
+    '</div></template>')
+
 SHARE_PANEL = ('<div class="calc-share-panel share-controls" hidden><h3>Share your result</h3>'
     '<p>Download a card sized for your platform, then post it yourself from the app. Websites can’t post to Instagram, '
     'TikTok or Threads for you, and we never will.</p><div class="calc-share-buttons">'
@@ -314,7 +468,10 @@ def calculator_main(slug, p, script):
               + ''.join(f'<option value="{k}"{" selected" if k == PROFESSIONS[0][0] else ""}>{esc(l)}</option>' for k, l in PROFESSIONS)
               + '</select><p class="calc-hint">Changes the example services in the wording only. The math is the same for every license.</p></div>')
     rows = ''
-    if p.get('rows'):
+    if p.get('rows') == 'menu':
+        rows = ('<div class="calc-rows calc-rows--menu" role="group" aria-label="Services on your menu"></div>'
+                '<p><button type="button" class="calc-add" data-action="add-row">+ Add a service</button></p>' + MENU_ROW_TEMPLATE)
+    elif p.get('rows'):
         rows = ('<div class="calc-rows" role="group" aria-label="Products and supplies"></div>'
                 '<p><button type="button" class="calc-add" data-action="add-row">+ Add an item</button></p>' + ROW_TEMPLATE)
     fields = (rows + ''.join(field_html(f) for f in p['basic'])
@@ -402,8 +559,8 @@ def hub_gate():
             'Employee or Business Owner.</p></noscript>')
 
 HUB = dict(title='Free Beauty Business Calculators | GLOWDEGA',
-           desc='Free calculators for beauty professionals: price your services, find your hourly rate, cost each service, '
-                'check profitability and find your break-even point.')
+           desc='Free calculators for beauty professionals: price services, find your hourly rate and break-even, check profit '
+                'and take-home pay, and test discounts and price increases.')
 
 def version(site):
     h = hashlib.sha256()

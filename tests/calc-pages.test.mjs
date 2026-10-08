@@ -9,8 +9,13 @@ import { onRequestGet as sitemap, RESOURCES } from '../functions/sitemap.xml.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
-const CALCS = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even'];
-const SOON = ['profit-take-home', 'capacity-clients', 'price-increase', 'discount-promotion', 'menu-profitability'];
+const SPRINT1 = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even'];
+const SPRINT2 = ['profit-take-home', 'menu-profitability', 'capacity-clients', 'price-increase', 'discount-promotion'];
+const CALCS = [...SPRINT1, ...SPRINT2];
+// calculators for the people who pay rent and labor only: no Employee option at all
+const SOLO_OWNER_ONLY = ['service-cost', 'menu-profitability', 'price-increase', 'discount-promotion'];
+// Capacity & Clients plans bookings, not costs: the one calculator with no rent, expense or labor inputs
+const NO_COSTS = ['capacity-clients'];
 const PAGES = ['resources/index.html', ...CALCS.map((c) => `resources/${c}/index.html`)];
 const one = (html, re) => html.match(re)?.[1];
 const text = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ');
@@ -95,19 +100,19 @@ test('calculator pages: shared framework hooks (labels, numeric keyboards, live 
 const fieldOf = (html, name) => one(html, new RegExp(`(<div class="calc-field"[^>]*>(?:(?!<div class="calc-field").)*?name="${name}"[^>]*>)`, 's'));
 const wrapperOf = (html, name) => one(fieldOf(html, name) || '', /^(<div class="calc-field"[^>]*>)/);
 
-test('rent: a "Monthly rent" input on all five calculators, for solo providers and owners only (employees never see it)', () => {
-  for (const c of CALCS) {
+test('rent: a "Monthly rent" input on every calculator with costs, for solo providers and owners only (employees never see it)', () => {
+  for (const c of CALCS.filter((x) => !NO_COSTS.includes(x))) {
     const html = read(`resources/${c}/index.html`);
     assert.match(html, /<span class="calc-label">Monthly rent<\/span>/, `${c}: no Monthly rent field`);
     for (const name of ['monthlyRent', 'hoursPerMonth']) {
       const wrap = wrapperOf(html, name);
-      // break-even and hourly-rate add rent whole (monthly, or × 12), so only they have no hours field
-      if (!wrap) { assert.equal(name, 'hoursPerMonth', `${c}: ${name} missing`); assert.ok(['break-even', 'hourly-rate'].includes(c), `${c}: hours missing`); continue; }
+      // break-even, hourly-rate and profit & take-home add rent whole (monthly, or × 12), so only they have no hours field
+      if (!wrap) { assert.equal(name, 'hoursPerMonth', `${c}: ${name} missing`); assert.ok(['break-even', 'hourly-rate', 'profit-take-home'].includes(c), `${c}: hours missing`); continue; }
       const types = one(wrap, /data-types="([^"]*)"/);
       assert.deepEqual(types?.split(' ').sort(), ['owner', 'solo'], `${c} ${name}: must be solo/owner only, got ${types}`);
     }
     // rent is never mixed into the other-expense fields: their hints say so
-    for (const name of ['monthlyFixed', 'monthlyVariable', 'annualExpenses', 'fixedCosts', 'overhead']) {
+    for (const name of ['monthlyFixed', 'monthlyVariable', 'annualExpenses', 'fixedCosts', 'overhead', 'fixedExpenses', 'variableExpenses']) {
       const f = fieldOf(html, name);
       if (f) assert.match(one(html, new RegExp(`id="f-${name}-hint">([^<]*)<`)), /not rent/, `${c} ${name}: hint must say "not rent"`);
     }
@@ -116,6 +121,13 @@ test('rent: a "Monthly rent" input on all five calculators, for solo providers a
   assert.match(hours, /value="160"/);
   assert.match(read('resources/service-pricing/index.html'), /id="f-hoursPerMonth-hint">Defaults to 160/);
   assert.doesNotMatch(read('resources/break-even/index.html'), /name="hoursPerMonth"/, 'break-even adds rent whole: no hours field');
+  // per-service calculators share rent by the hour with the same 160-hour default
+  for (const c of ['price-increase', 'discount-promotion', 'menu-profitability']) assert.match(fieldOf(read(`resources/${c}/index.html`), 'hoursPerMonth'), /value="160"/, c);
+  for (const c of NO_COSTS) {
+    const html = read(`resources/${c}/index.html`);
+    assert.doesNotMatch(html, /name="(monthlyRent|hoursPerMonth|monthlyPay|monthlyPayroll|ownerPay|providerWage|commissionRate|targetHourly|fixedExpenses|variableExpenses|overhead)"/, `${c}: no cost inputs`);
+    assert.match(text(html), /rent, pay and other costs/i, `${c}: says where costs are handled`);
+  }
 });
 
 test('service pricing: profit margin defaults to 30% and the page rejects anything below it with the exact message', () => {
@@ -145,21 +157,35 @@ test('hourly rate: employee pay types, each field shown only for its pay type; e
 const LICENSES = [['esthetician', 'Esthetician'], ['cosmetologist', 'Cosmetologist/Hairstylist'], ['manicurist', 'Manicurist/Nail Technician'], ['barber', 'Barber']];
 const optionsOf = (select) => [...select.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]);
 
-test('hub: hero, four categories, 5 live calculators and 5 unlinked coming-soon cards, all in the HTML', () => {
+test('hub: hero, four categories, all 10 calculators live and linked; only Additional Resources is coming soon', () => {
   const html = read('resources/index.html');
   assert.match(html, /<h1>Beauty Business Calculators<\/h1>/);
   for (const cat of ['Pricing', 'Profitability', 'Growth', 'Promotions']) assert.match(html, new RegExp(`<h2 id="cat-${cat.toLowerCase()}">${cat}</h2>`));
   // the cards are plain links in the static HTML (crawlable); JavaScript only adds ?type=&profession=
   for (const c of CALCS) assert.match(html, new RegExp(`<a class="hub-card" href="${c}/" data-audiences="[a-z ]+"[^>]* data-types="[a-z ]+"`), c);
-  const soon = [...html.matchAll(/<div class="hub-card is-soon" aria-disabled="true"[^>]*>(.*?)<\/div>/gs)];
-  assert.equal(soon.length, SOON.length);
-  for (const s of SOON) assert.doesNotMatch(html, new RegExp(`href="[^"]*${s}`), `${s} must not be clickable yet`);
+  assert.equal((html.match(/<a class="hub-card" href="/g) || []).length, CALCS.length, 'exactly one live card per calculator');
+  assert.doesNotMatch(html, /hub-card is-soon/, 'no calculator is still "coming soon"');
+  const body = one(html, /<div class="hub-body">(.*)<\/div><\/div>/s);
+  const cards = [...body.matchAll(/<a class="hub-card"[^>]*>(.*?)<\/a>/gs)].map((m) => m[1]);
+  for (const c of cards) {
+    assert.doesNotMatch(c, /soon-pill|Coming soon/i, 'a live card never says coming soon');
+    assert.match(c, /<span class="hub-card__cta">[^<]+ →<\/span>/, 'every live card has a CTA');
+  }
+  // the hub lists each category's tools: Pricing 3, Profitability 4, Growth 2, Promotions 1
+  for (const [cat, n] of [['pricing', 3], ['profitability', 4], ['growth', 2], ['promotions', 1]]) {
+    assert.match(html, new RegExp(`<h2 id="cat-${cat}">[^<]+</h2><span>${n} tools?</span>`), cat);
+  }
   assert.match(html, /Additional Resources/);
   for (const m of ['Pricing Guides', 'Business Templates', 'Marketing Tools']) assert.match(html, new RegExp(`<li class="hub-soon" aria-disabled="true"><span>${m}</span><span class="soon-pill">Coming soon</span></li>`));
+  assert.doesNotMatch(one(html, /(<section class="hub-more".*?<\/section>)/s), /href=/, 'Additional Resources stay unlinked');
   assert.doesNotMatch(html, /ad-slot|data-ad-/);
   assert.doesNotMatch(html, /data-audience=|aria-pressed/, 'the old "I’m a…" buttons are replaced by the gate');
   // no card is hidden in the HTML itself: hiding happens only once the hub script can run
-  assert.doesNotMatch(one(html, /<div class="hub-body">(.*)<\/div><\/div>/s), /\shidden[\s>]/);
+  assert.doesNotMatch(body, /\shidden[\s>]/);
+  // the hub's ItemList names every live calculator
+  const ld = JSON.parse(one(html, /<script type="application\/ld\+json">(.*?)<\/script>/s));
+  const list = ld['@graph'].find((n) => n['@type'] === 'ItemList').itemListElement.map((i) => i.url);
+  assert.deepEqual(list.sort(), CALCS.map((c) => `https://www.glowdega.com/resources/${c}/`).sort());
 });
 
 test('hub gate: "I’m a Licensed [4 licenses] and a [3 worker types]" sentence picker', () => {
@@ -212,6 +238,14 @@ test('hub links: matching cards link with ?type=&profession=; ?type only where t
   const html = read('resources/index.html');
   assert.equal(one(html, /href="service-pricing\/"[^>]* data-types="([^"]+)"/), 'solo owner');
   assert.equal(one(html, /href="hourly-rate\/"[^>]* data-types="([^"]+)"/), 'solo employee owner');
+  for (const [c, types] of [['profit-take-home', 'solo employee owner'], ['capacity-clients', 'solo employee owner'], ['price-increase', 'solo owner'],
+    ['discount-promotion', 'solo owner'], ['menu-profitability', 'solo owner']]) {
+    assert.equal(one(html, new RegExp(`href="${c}/"[^>]* data-types="([^"]+)"`)), types, c);
+    assert.equal(one(html, new RegExp(`href="${c}/" data-audiences="([^"]+)"`)), types, `${c}: shown to exactly the types it serves`);
+  }
+  assert.equal(cardHref('profit-take-home/', { type: 'employee', profession: 'barber', types: ['solo', 'employee', 'owner'] }), 'profit-take-home/?type=employee&profession=barber');
+  assert.equal(cardHref('discount-promotion/', { type: 'owner', profession: 'manicurist', types: ['solo', 'owner'] }), 'discount-promotion/?type=owner&profession=manicurist');
+  assert.match(one(html, /(<a class="hub-card" href="profit-take-home\/"[^>]*>)/), /data-desc-employee="Estimate your take-home pay/);
 });
 
 test('calculator pages are not gated: worker-type selector plus a small profession selector, pre-set by the framework', async () => {
@@ -220,8 +254,8 @@ test('calculator pages are not gated: worker-type selector plus a small professi
   for (const c of CALCS) {
     const html = read(`resources/${c}/index.html`);
     assert.doesNotMatch(html, /data-hub-gate/, `${c}: never gated`);
-    // every calculator offers every worker type except Cost Per Service, which is for those who pay rent and labor
-    const types = c === 'service-cost' ? ['solo', 'owner'] : ['solo', 'employee', 'owner'];
+    // every calculator offers every worker type except the ones only for those who pay rent and labor
+    const types = SOLO_OWNER_ONLY.includes(c) ? ['solo', 'owner'] : ['solo', 'employee', 'owner'];
     for (const t of types) assert.match(html, new RegExp(`name="businessType" value="${t}"`), `${c}: ${t}`);
     if (!types.includes('employee')) assert.doesNotMatch(html, /name="businessType" value="employee"/, `${c}: no employee option`);
     const sel = one(html, /(<select id="f-profession" name="profession">.*?<\/select>)/s);
@@ -253,6 +287,17 @@ const LABOR = [
   ['break-even', 'monthlyPayroll', 'Monthly payroll (wages + payroll taxes)', 'owner'],
   ['break-even', 'ownerPay', 'Your monthly owner pay', 'owner'],
   ['break-even', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['profit-take-home', 'monthlyPay', 'Your monthly pay', 'solo'],
+  ['profit-take-home', 'monthlyPayroll', 'Monthly payroll (wages + payroll taxes)', 'owner'],
+  ['profit-take-home', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['profit-take-home', 'ownerPay', 'Your monthly owner pay', 'owner'],
+  ['price-increase', 'targetHourly', 'Your pay per hour', 'solo'],
+  ['price-increase', 'providerWage', 'Provider’s hourly wage', 'owner'],
+  ['price-increase', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['discount-promotion', 'targetHourly', 'Your pay per hour', 'solo'],
+  ['discount-promotion', 'providerWage', 'Provider’s hourly wage', 'owner'],
+  ['discount-promotion', 'commissionRate', 'Commission paid per service (%)', 'owner'],
+  ['menu-profitability', 'targetHourly', 'Your pay per hour', 'solo'],
 ];
 
 test('labor fields: solo pay and owner payroll/wage/commission on every calculator with costs; never shown to employees', () => {
@@ -266,7 +311,8 @@ test('labor fields: solo pay and owner payroll/wage/commission on every calculat
   // nothing labor-like is ever shown to employees on any calculator (hourly-rate's commission is the employee's own pay)
   for (const c of CALCS) {
     const html = read(`resources/${c}/index.html`);
-    for (const name of ['monthlyPay', 'monthlyPayroll', 'ownerPay', 'providerWage', ...(c === 'hourly-rate' ? [] : ['commissionRate', 'targetHourly'])]) {
+    for (const name of ['monthlyPay', 'monthlyPayroll', 'ownerPay', 'providerWage', 'commissionRate', 'targetHourly']) {
+      if (c === 'hourly-rate' && ['commissionRate', 'targetHourly'].includes(name)) continue; // hourly-rate's commission is the employee's own pay
       const wrap = wrapperOf(html, name);
       if (wrap) assert.doesNotMatch(wrap, /employee/, `${c} ${name}: employees never see labor`);
     }
@@ -360,5 +406,93 @@ test('UI and calculator files hold no financial formulas (they call assets/calc/
     const code = read(f).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
     assert.doesNotMatch(code, /\b(v|r|at|values)\.[\w.[\]]+\s*[-+*/]\s*[\w(]/, `${f}: arithmetic on inputs/results belongs in assets/calc/core`);
   }
-  for (const c of CALCS) assert.match(read(`assets/calc/calculators/${c}.js`), /from '\.\.\/core\/(pricing|profit|breakeven|costs)\.js'/, c);
+  for (const c of CALCS) assert.match(read(`assets/calc/calculators/${c}.js`), /from '\.\.\/core\/(pricing|profit|breakeven|costs|capacity|discount|menu)\.js'/, c);
+});
+
+// ======================= Sprint 2 pages =======================
+test('Sprint 2 pages: SEO title, meta description, H1 and JSON-LD name match each calculator', () => {
+  const want = {
+    'profit-take-home': ['Profit & Take-Home Pay Calculator for Beauty Pros | GLOWDEGA', 'Profit &amp; Take-Home Calculator'],
+    'capacity-clients': ['Capacity & Clients Calculator for Beauty Businesses | GLOWDEGA', 'Capacity &amp; Clients Calculator'],
+    'price-increase': ['Price Increase Calculator for Salons & Beauty Pros | GLOWDEGA', 'Price Increase Calculator'],
+    'discount-promotion': ['Discount & Promotion Calculator for Beauty Businesses | GLOWDEGA', 'Discount &amp; Promotion Calculator'],
+    'menu-profitability': ['Service Menu Profitability Analyzer for Beauty Pros | GLOWDEGA', 'Service Menu Profitability Analyzer'],
+  };
+  for (const [c, [title, h1]] of Object.entries(want)) {
+    const html = read(`resources/${c}/index.html`);
+    assert.equal(one(html, /<title>([^<]+)<\/title>/).replace(/&amp;/g, '&'), title, c);
+    assert.equal(one(html, /<h1>([^<]+)<\/h1>/), h1, c);
+    const nodes = [...html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)].flatMap((m) => JSON.parse(m[1])['@graph'] || []);
+    assert.equal(nodes.find((n) => n['@type'] === 'WebApplication').url, `https://www.glowdega.com/resources/${c}/`);
+    assert.equal(nodes.find((n) => n['@type'] === 'WebApplication').name, h1.replace(/&amp;/g, '&'));
+    assert.doesNotMatch(text(html), /coming soon/i, `${c}: a live page never says coming soon`);
+  }
+  // the pricing page's employee note now links the live take-home calculator instead of promising it
+  const note = one(read('resources/service-pricing/index.html'), /<div class="calc-type-note" data-for-type="employee" hidden><p>(.*?)<\/p><\/div>/s);
+  assert.match(note, /<a href="\.\.\/profit-take-home\/\?type=employee">Profit &amp; Take-Home Calculator<\/a>/);
+});
+
+test('profit & take-home page: accounting model stated in the copy; employee mode replaces the business inputs', () => {
+  const html = read('resources/profit-take-home/index.html');
+  const intro = text(one(html, /<div class="calc-intro">(.*?)<\/div>/s));
+  assert.match(intro, /your pay is a business expense, business profit is what remains after every expense including your pay, and your take-home is your pay plus that profit, minus estimated taxes/);
+  assert.match(intro, /counted once, never twice/);
+  for (const n of ['monthlyPay', 'ownerPay']) assert.match(one(html, new RegExp(`id="f-${n}-hint">([^<]*)<`)), /counted once/, `${n}: hint explains the model`);
+  const pay = one(html, /(<fieldset class="calc-type calc-choice"[^>]*>.*?<\/fieldset>)/s);
+  assert.match(pay, /data-types="employee"/);
+  assert.deepEqual([...pay.matchAll(/name="payType" value="(\w+)"/g)].map((m) => m[1]), ['hourly', 'commission', 'mixed']);
+  const when = { revenueGenerated: 'payType:commission mixed', payCommissionRate: 'payType:commission mixed', hourlyWage: 'payType:hourly mixed',
+    hoursWorked: 'payType:hourly mixed', hoursOptional: 'payType:commission' };
+  for (const [n, w] of Object.entries(when)) {
+    assert.equal(one(wrapperOf(html, n), /data-types="([^"]*)"/), 'employee', n);
+    assert.equal(one(wrapperOf(html, n), /data-when="([^"]*)"/), w, n);
+  }
+  for (const n of ['tips', 'bonuses']) assert.match(wrapperOf(html, n), /data-types="employee"/, n);
+  for (const n of ['serviceRevenue', 'productCosts', 'monthlyRent', 'fixedExpenses', 'retailRevenue', 'variableExpenses']) {
+    assert.deepEqual(one(wrapperOf(html, n), /data-types="([^"]*)"/).split(' ').sort(), ['owner', 'solo'], `${n}: never for employees`);
+  }
+  assert.match(fieldOf(html, 'payCommissionRate'), /data-min-exclusive/, '0% commission is rejected on the page too');
+  assert.match(fieldOf(html, 'serviceRevenue'), /data-required/);
+});
+
+test('capacity page: 60- or 90-minute service length choice, 20 working days, employee wording', () => {
+  const html = read('resources/capacity-clients/index.html');
+  const len = one(html, /(<fieldset class="calc-type calc-choice"><legend>Average service length<\/legend>.*?<\/fieldset>)/s);
+  assert.ok(len, 'no service length choice for every type');
+  assert.deepEqual([...len.matchAll(/name="serviceMinutes" value="(\d+)"/g)].map((m) => m[1]), ['60', '90']);
+  assert.match(len, /value="60" checked/);
+  assert.match(fieldOf(html, 'workingDaysPerMonth'), /value="20"/);
+  assert.match(fieldOf(html, 'averageTicket'), /data-min-message="Enter an average service price greater than \$0\."/);
+  assert.match(fieldOf(html, 'revenueGoal'), /data-label-employee="Monthly service revenue goal"/);
+  for (const n of ['currentClients', 'currentTicket']) assert.ok(html.indexOf(`name="${n}"`) > html.indexOf('class="calc-advanced"'), `${n} is optional, under Customize`);
+});
+
+test('discount and price-increase pages: 30% target-margin floor, discount below 100%, per-service rent and labor', () => {
+  const disc = read('resources/discount-promotion/index.html');
+  const m = fieldOf(disc, 'targetMargin');
+  for (const re of [/value="30"/, /data-min="30"/, /data-min-message="Enter a profit margin of at least 30%\."/, /data-required/]) assert.match(m, re);
+  assert.match(fieldOf(disc, 'discountRate'), /data-max="100" data-max-exclusive/);
+  assert.match(fieldOf(disc, 'promoAppointments'), /placeholder="25"/);
+  for (const c of ['discount-promotion', 'price-increase']) {
+    const html = read(`resources/${c}/index.html`);
+    assert.match(fieldOf(html, 'durationMinutes'), /data-required/, `${c}: rent and labor are shared by time`);
+    assert.doesNotMatch(html, /name="monthlyPay"/, `${c}: one solo labor input (pay per hour), never two`);
+  }
+  assert.match(fieldOf(read('resources/price-increase/index.html'), 'expectedLoss'), /data-max="100" data-max-exclusive/);
+});
+
+test('menu page: dynamic service rows; wage and commission columns are owners’ only; solo pay per hour is one field', () => {
+  const html = read('resources/menu-profitability/index.html');
+  assert.match(html, /<div class="calc-rows calc-rows--menu" role="group" aria-label="Services on your menu"><\/div>/);
+  assert.match(html, /data-action="add-row">\+ Add a service<\/button>/);
+  const tpl = one(html, /(<template id="calc-row-template">.*?<\/template>)/s);
+  assert.deepEqual([...tpl.matchAll(/data-col="(\w+)"/g)].map((m) => m[1]), ['name', 'price', 'duration', 'product', 'supply', 'wage', 'commission']);
+  for (const col of ['wage', 'commission']) assert.match(tpl, new RegExp(`<div class="calc-row__cell" data-owner-only><label data-for="${col}">`), col);
+  for (const col of ['name', 'price', 'duration', 'product', 'supply']) assert.doesNotMatch(tpl, new RegExp(`data-owner-only><label data-for="${col}"`), col);
+  for (const col of ['price', 'duration', 'product', 'supply', 'wage', 'commission']) assert.match(tpl, new RegExp(`data-col="${col}" type="text" inputmode="decimal"`), col);
+  assert.match(tpl, /placeholder="60"/, 'example durations stay at 60 minutes');
+  assert.match(read('assets/style.css'), /\.calc:not\(\[data-type="owner"\]\) \[data-owner-only\]\{display:none\}/, 'solo providers never see wage or commission');
+  assert.match(html, /data-for-type="owner" hidden><p>Enter each service’s provider wage/);
+  const mod = read('assets/calc/calculators/menu-profitability.js');
+  assert.match(mod, /if \(ownerOnly && !owner\) continue;/, 'row wage and commission are read for owners only');
 });

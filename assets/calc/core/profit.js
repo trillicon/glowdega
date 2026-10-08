@@ -54,3 +54,97 @@ export function calculateServiceProfitability({
     hourlyGap: targetHourly > 0 ? targetHourly - profitPerHour : 0,
   };
 }
+
+// ---------- Profit & Take-Home ----------
+/**
+ * A month in the business (solo provider or owner). Accounting model: your own pay is a business expense, like payroll.
+ *   total revenue     = service revenue + retail revenue
+ *   commission        = service revenue × commission rate                       (owners who pay providers a share)
+ *   operating costs   = product/service costs + rent + other fixed + variable + payroll + commission
+ *   business expenses = operating costs + your pay (owner compensation)
+ *   business profit   = total revenue − business expenses                        (after you are paid)
+ *   your earnings     = your pay + business profit = total revenue − operating costs   (each dollar counted once)
+ *   estimated taxes   = your earnings × tax rate   (none when the business loses money before your pay)
+ *   take-home         = your earnings − estimated taxes
+ * Your pay is counted once: it is an expense of the business and part of your earnings, never added on top of profit
+ * a second time. Moving money between your pay and the profit changes how they split, not what you take home.
+ * The calculator passes monthlyPay for a solo provider and ownerPay (+ payroll, commission) for an owner.
+ */
+export function calculateBusinessProfit({
+  serviceRevenue, retailRevenue = 0, productCosts = 0, monthlyRent = 0, fixedExpenses = 0, variableExpenses = 0,
+  monthlyPayroll = 0, commissionRate = 0, monthlyPay = 0, ownerPay = 0, taxRate = 0,
+}) {
+  const errors = guard([
+    ['serviceRevenue', serviceRevenue, (v) => v >= 0, 'Enter monthly service revenue of $0 or more.'],
+    ['retailRevenue', retailRevenue, (v) => v >= 0, 'Enter retail revenue of $0 or more.'],
+    ['productCosts', productCosts, (v) => v >= 0, 'Enter product/service costs of $0 or more.'],
+    ['monthlyRent', monthlyRent, (v) => v >= 0, 'Enter monthly rent of $0 or more.'],
+    ['fixedExpenses', fixedExpenses, (v) => v >= 0, 'Enter other fixed expenses of $0 or more.'],
+    ['variableExpenses', variableExpenses, (v) => v >= 0, 'Enter variable expenses of $0 or more.'],
+    ['monthlyPayroll', monthlyPayroll, (v) => v >= 0, 'Enter monthly payroll of $0 or more.'],
+    ['commissionRate', commissionRate, (v) => v >= 0 && v < 1, 'Enter a commission below 100%.'],
+    ['monthlyPay', monthlyPay, (v) => v >= 0, 'Enter your monthly pay of $0 or more.'],
+    ['ownerPay', ownerPay, (v) => v >= 0, 'Enter your monthly owner pay of $0 or more.'],
+    ['taxRate', taxRate, (v) => v >= 0 && v < 1, 'Enter an estimated tax rate below 100%.'],
+  ]);
+  if (!errors.serviceRevenue && !errors.retailRevenue && !(serviceRevenue + retailRevenue > 0)) errors.serviceRevenue = 'Enter your monthly service revenue.';
+  if (Object.keys(errors).length) return { ok: false, errors };
+  const totalRevenue = serviceRevenue + retailRevenue;
+  const commission = serviceRevenue * commissionRate;
+  const operatingCosts = productCosts + monthlyRent + fixedExpenses + variableExpenses + monthlyPayroll + commission;
+  const ownerComp = monthlyPay + ownerPay;
+  const businessExpenses = operatingCosts + ownerComp;
+  const businessProfit = totalRevenue - businessExpenses;
+  const ownerEarnings = ownerComp + businessProfit;
+  const estimatedTaxes = Math.max(0, ownerEarnings) * taxRate;
+  const takeHome = ownerEarnings - estimatedTaxes;
+  let status;
+  if (businessProfit < -0.005) status = 'loss';
+  else if (businessProfit <= 0.005) status = 'even';
+  else status = 'profit';
+  return {
+    ok: true, totalRevenue, serviceRevenue, retailRevenue, commission, labor: monthlyPayroll + commission, operatingCosts, ownerComp,
+    businessExpenses, businessProfit, profitMargin: businessProfit / totalRevenue, ownerEarnings, estimatedTaxes, takeHome,
+    takeHomeAnnual: takeHome * 12, status, earningsShortfall: ownerEarnings < -0.005,
+  };
+}
+
+const EMPLOYEE_PAY = ['hourly', 'commission', 'mixed'];
+
+/**
+ * An employee's month. No rent or business expenses: the business pays those.
+ *   commission earnings = service revenue generated × commission rate        (commission, hourly + commission)
+ *   hourly earnings     = hourly wage × hours worked                         (hourly, hourly + commission)
+ *   gross earnings      = commission + hourly + tips + bonuses
+ *   estimated taxes     = gross × tax rate;   take-home = gross − taxes
+ *   effective hourly    = gross ÷ hours worked (and take-home ÷ hours), when hours are entered
+ */
+export function calculateEmployeeTakeHome({
+  payType = 'hourly', serviceRevenue = 0, commissionRate = 0, hourlyWage = 0, hoursWorked = 0, tips = 0, bonuses = 0, taxRate = 0,
+}) {
+  const commissioned = payType === 'commission' || payType === 'mixed';
+  const hourly = payType === 'hourly' || payType === 'mixed';
+  const errors = guard([
+    ['serviceRevenue', serviceRevenue, (v) => v >= 0, 'Enter monthly service revenue of $0 or more.'],
+    ['tips', tips, (v) => v >= 0, 'Enter monthly tips of $0 or more.'],
+    ['bonuses', bonuses, (v) => v >= 0, 'Enter monthly bonuses of $0 or more.'],
+    ['taxRate', taxRate, (v) => v >= 0 && v < 1, 'Enter an estimated tax rate below 100%.'],
+    ['hoursWorked', hoursWorked, (v) => v >= 0 && v <= 744, 'Enter hours worked per month between 0 and 744.'],
+    ...(commissioned ? [['commissionRate', commissionRate, (v) => v > 0 && v < 1, 'Enter a commission rate above 0% and below 100%.'],
+      ['serviceRevenue', serviceRevenue, (v) => v > 0, 'Enter the monthly service revenue you generate.']] : []),
+    ...(hourly ? [['hourlyWage', hourlyWage, (v) => v > 0, 'Enter an hourly wage greater than $0.'],
+      ['hoursWorked', hoursWorked, (v) => v > 0, 'Enter the hours you work per month.']] : []),
+  ]);
+  if (!EMPLOYEE_PAY.includes(payType)) errors.payType = 'Choose how you are paid: hourly, commission, or hourly + commission.';
+  if (Object.keys(errors).length) return { ok: false, errors };
+  const commissionEarnings = commissioned ? serviceRevenue * commissionRate : 0;
+  const hourlyEarnings = hourly ? hourlyWage * hoursWorked : 0;
+  const gross = commissionEarnings + hourlyEarnings + tips + bonuses;
+  const estimatedTaxes = gross * taxRate;
+  const takeHome = gross - estimatedTaxes;
+  return {
+    ok: true, payType, serviceRevenue, commissionEarnings, hourlyEarnings, tips, bonuses, gross, estimatedTaxes, takeHome,
+    takeHomeAnnual: takeHome * 12, hoursWorked, hasHours: hoursWorked > 0,
+    effectiveHourly: hoursWorked > 0 ? gross / hoursWorked : 0, takeHomePerHour: hoursWorked > 0 ? takeHome / hoursWorked : 0,
+  };
+}

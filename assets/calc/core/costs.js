@@ -62,3 +62,46 @@ export function calculateServiceCost({ items, monthlyRent = 0, hoursPerMonth = D
     payPerHour, laborPerHour, laborTime, commission, labor, commissionNeedsPrice: commissionRate > 0 && !(price > 0),
     trueCost: consumables.totalCost + rent.rentShare + labor };
 }
+
+const EPS = 1e-9;
+
+/**
+ * The cost parts of one appointment of a priced service, split by how they behave when the price changes:
+ *   fixed per service = product/supply cost + other overhead + rent share + hourly labor × service hours
+ *   price rate        = commission + card processing   (shares of whatever price is charged)
+ *   cost at price P   = fixed per service + P × price rate
+ *   profit at price P = P × (1 − price rate) − fixed per service        (profitAt)
+ * Labor: solo = your pay per hour; owner = the provider's hourly wage (+ commission as a share of the price).
+ * Used by the price-increase and discount calculators, so a price change moves commission and card fees with it.
+ */
+export function serviceCostParts({ durationMinutes, productCost = 0, overhead = 0, monthlyRent = 0, hoursPerMonth = DEFAULT_HOURS_PER_MONTH,
+  laborHourly = 0, commissionRate = 0, processingRate = 0 }) {
+  const errors = guard([
+    ['durationMinutes', durationMinutes, (v) => v > 0, 'Enter a service duration greater than 0 minutes.'],
+    ['productCost', productCost, (v) => v >= 0, 'Enter a product/supply cost of $0 or more.'],
+    ['overhead', overhead, (v) => v >= 0, 'Enter other overhead of $0 or more.'],
+    ['laborHourly', laborHourly, (v) => v >= 0, 'Enter an hourly pay or wage of $0 or more.'],
+    ['commissionRate', commissionRate, (v) => v >= 0 && v < 1, 'Enter a commission below 100%.'],
+    ['processingRate', processingRate, (v) => v >= 0 && v < 1, 'Enter a payment processing rate below 100%.'],
+  ]);
+  const rent = allocateRent({ monthlyRent, hoursPerMonth, durationMinutes: errors.durationMinutes ? 0 : durationMinutes });
+  if (!rent.ok) Object.assign(errors, rent.errors);
+  if (Object.keys(errors).length) return { ok: false, errors };
+  if (commissionRate + processingRate >= 1 - EPS) {
+    const message = 'Commission and payment processing together must be below 100% of the price.';
+    return { ok: false, errors: { commissionRate: message, processingRate: message } };
+  }
+  const hours = durationMinutes / 60;
+  const laborTime = laborHourly * hours;
+  return { ok: true, hours, rentShare: rent.rentShare, rentPerHour: rent.rentPerHour, laborHourly, laborTime, productCost, overhead,
+    fixedPerService: productCost + overhead + rent.rentShare + laborTime, commissionRate, processingRate, priceRate: commissionRate + processingRate };
+}
+
+/** One appointment at a given price, from serviceCostParts(): commission and card fees follow the price. */
+export function profitAt(parts, price) {
+  const commission = price * parts.commissionRate;
+  const processing = price * parts.processingRate;
+  const totalCost = parts.fixedPerService + commission + processing;
+  const profit = price - totalCost;
+  return { price, commission, processing, labor: parts.laborTime + commission, totalCost, profit, margin: price > 0 ? profit / price : 0 };
+}

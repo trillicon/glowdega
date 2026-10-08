@@ -8,6 +8,11 @@ import { config as hourly } from '../assets/calc/calculators/hourly-rate.js';
 import { config as cost } from '../assets/calc/calculators/service-cost.js';
 import { config as profit } from '../assets/calc/calculators/service-profitability.js';
 import { config as breakEven } from '../assets/calc/calculators/break-even.js';
+import { config as takeHome, MODEL } from '../assets/calc/calculators/profit-take-home.js';
+import { config as capacity } from '../assets/calc/calculators/capacity-clients.js';
+import { config as increase } from '../assets/calc/calculators/price-increase.js';
+import { config as discount } from '../assets/calc/calculators/discount-promotion.js';
+import { config as menu, recommendations } from '../assets/calc/calculators/menu-profitability.js';
 import { PROFESSIONS, serviceText, signatureService } from '../assets/calc/ui/professions.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg ?? ''} expected ${b}, got ${a}`);
@@ -29,6 +34,18 @@ const V = {
     targetHourly: 40, providerWage: 20, commissionRate: 25, targetProfitPerHour: 30 },
   breakEven: { monthlyRent: 2000, monthlyPay: 3000, monthlyPayroll: 6000, ownerPay: 4000, fixedCosts: 1000, servicePrice: 110, variableCost: 18,
     processingRate: 3, commissionRate: 40, retailRevenue: 0, retailCostRate: 0, workingDaysPerWeek: 5 },
+  takeHome: { serviceRevenue: 12000, retailRevenue: 0, productCosts: 1000, monthlyRent: 2000, fixedExpenses: 500, variableExpenses: 500, monthlyPay: 5000,
+    monthlyPayroll: 3000, commissionRate: 10, ownerPay: 4000, taxRate: 25, payType: 'mixed', revenueGenerated: 8000, payCommissionRate: 10, hourlyWage: 15,
+    hoursWorked: 160, hoursOptional: 150, tips: 500, bonuses: 100 },
+  capacity: { revenueGoal: 8000, averageTicket: 100, workingDaysPerMonth: 20, serviceMinutes: 60, currentClients: 55, currentTicket: 105 },
+  increase: { currentPrice: 100, newPrice: 115, monthlyAppointments: 60, durationMinutes: 60, productCost: 10, monthlyRent: 1600, hoursPerMonth: 160,
+    targetHourly: 30, providerWage: 20, commissionRate: 40, processingRate: 0, expectedLoss: 0 },
+  discount: { regularPrice: 150, discountRate: 20, promoAppointments: 25, durationMinutes: 60, productCost: 15, monthlyRent: 2000, hoursPerMonth: 160,
+    targetHourly: 40, providerWage: 20, commissionRate: 40, overhead: 0, processingRate: 3, targetMargin: 30 },
+  menu: { monthlyRent: 1600, hoursPerMonth: 160, targetHourly: 30, processingRate: 0, services: [
+    { name: 'Facial', price: 120, durationMinutes: 60, productCost: 10, supplyCost: 2, laborHourly: 20, commissionRate: 30 },
+    { name: 'Peel', price: 170, durationMinutes: 90, productCost: 20, supplyCost: 5, laborHourly: 20, commissionRate: 30 },
+    { name: 'Lash fill', price: 70, durationMinutes: 60, productCost: 8, supplyCost: 2, laborHourly: 20, commissionRate: 30 }] },
 };
 const CASES = [
   ['service-pricing', pricing, V.pricing, ['solo', 'owner']],
@@ -36,6 +53,11 @@ const CASES = [
   ['service-cost', cost, V.cost, ['solo', 'owner']],
   ['service-profitability', profit, V.profit, ['solo', 'owner']],
   ['break-even', breakEven, V.breakEven, ['solo', 'owner']],
+  ['profit-take-home', takeHome, V.takeHome, ['solo', 'employee', 'owner']],
+  ['capacity-clients', capacity, V.capacity, ['solo', 'employee', 'owner']],
+  ['price-increase', increase, V.increase, ['solo', 'owner']],
+  ['discount-promotion', discount, V.discount, ['solo', 'owner']],
+  ['menu-profitability', menu, V.menu, ['solo', 'owner']],
 ];
 
 test('profession changes wording only: every calculator gives identical numbers for all four professions', () => {
@@ -204,4 +226,176 @@ test('break-even labor: solo pay or owner payroll + owner pay as fixed costs; co
   assert.equal(impossible.view.primary.value, 'Not possible');
   assert.match(impossible.view.insight, /variable cost and commission/);
   assert.equal(typeof owner.view.extraNode, 'function', 'the chart is built only in the browser');
+});
+
+// ======================= Sprint 2 =======================
+const NEGATIVE_MONEY = /[-−]\$/;
+
+test('every Sprint 2 view: no NaN/Infinity/undefined text, losses never shown as a negative profit', () => {
+  for (const [name, calc, values, types] of CASES.slice(5)) {
+    for (const type of types) {
+      const r = calc.compute({ values, type, profession: 'barber' });
+      assert.equal(r.ok, true, `${name} ${type}`);
+      assert.doesNotMatch(textOf(r.view), /NaN|Infinity|undefined/, `${name} ${type}`);
+      assert.doesNotMatch(textOf(r.view), /-\$\d[^"]* profit/, `${name} ${type}: "-$x profit"`);
+      assert.ok(r.view.method.length >= 3, `${name} ${type}: methodology`);
+      assert.ok(r.view.insight && r.view.share, `${name} ${type}: insight and share`);
+    }
+  }
+  // losses, shortfalls and cuts: labelled in words, never as a negative amount (spec §26)
+  const losing = [
+    [takeHome, { ...V.takeHome, serviceRevenue: 3000 }, 'solo'], [takeHome, { ...V.takeHome, serviceRevenue: 3000 }, 'owner'],
+    [increase, { ...V.increase, newPrice: 80 }, 'solo'], [increase, { ...V.increase, currentPrice: 30, newPrice: 40 }, 'owner'],
+    [discount, { ...V.discount, discountRate: 80 }, 'solo'], [discount, { ...V.discount, regularPrice: 40, discountRate: 10 }, 'owner'],
+    [menu, { ...V.menu, services: [{ ...V.menu.services[0], price: 30 }, { ...V.menu.services[2], price: 20 }] }, 'solo'],
+  ];
+  for (const [calc, values, type] of losing) {
+    const r = calc.compute({ values, type, profession: 'esthetician' });
+    assert.equal(r.ok, true);
+    assert.doesNotMatch(textOf(r.view), NEGATIVE_MONEY, textOf(r.view).match(/.{60}[-−]\$.{20}/)?.[0]);
+    assert.ok(r.view.primary.loss || r.view.cards.some((c) => c.loss), 'the loss is flagged');
+  }
+});
+
+test('profit & take-home: the accounting model is stated, owner pay is an expense once, profit and take-home are distinct', () => {
+  const solo = takeHome.compute({ values: V.takeHome, type: 'solo', profession: 'esthetician' });
+  assert.equal(solo.view.method[0], MODEL);
+  assert.match(MODEL, /counted once/);
+  near(solo.raw.ownerComp, 5000, 'solo: your monthly pay only');
+  near(solo.raw.labor, 0, 'no payroll or commission for a solo provider');
+  assert.equal(solo.view.primary.value, '$6,000');
+  assert.equal(card(solo.view, 'Business profit').value, '$3,000');
+  assert.equal(card(solo.view, 'Business expenses').note, 'Includes $5,000 your pay');
+  assert.equal(card(solo.view, 'Rent').value, '$2,000');
+  const owner = takeHome.compute({ values: V.takeHome, type: 'owner', profession: 'esthetician' });
+  near(owner.raw.ownerComp, 4000, 'owner: owner pay, never the solo pay');
+  near(owner.raw.labor, 3000 + 1200);
+  assert.equal(owner.view.primary.label, 'Owner take-home pay a month');
+  assert.equal(card(owner.view, 'Business loss').value, '$200', 'a loss is labelled, not shown as negative profit');
+  assert.equal(card(owner.view, 'Business loss').loss, true);
+  assert.match(owner.view.insight, /can’t fully cover your owner pay/);
+  assert.equal(card(owner.view, 'Labor: payroll + commission').value, '$4,200');
+  const loss = takeHome.compute({ values: { ...V.takeHome, serviceRevenue: 3000 }, type: 'solo', profession: 'esthetician' });
+  assert.equal(loss.view.primary.loss, true);
+  assert.match(loss.view.primary.label, /shortfall/);
+  assert.doesNotMatch(textOf(loss.view), NEGATIVE_MONEY);
+  const even = takeHome.compute({ values: { ...V.takeHome, monthlyPay: 8000 }, type: 'solo', profession: 'esthetician' });
+  assert.match(even.view.insight, /breaks even after paying you/);
+});
+
+test('profit & take-home employee: replaces the business model per pay type; no rent or business costs', () => {
+  const shown = (v) => v.cards.map((c) => c.label);
+  const hourly = takeHome.compute({ values: { ...V.takeHome, payType: 'hourly' }, type: 'employee', profession: 'barber' });
+  near(hourly.raw.gross, 15 * 160 + 500 + 100);
+  assert.deepEqual(shown(hourly.view), ['Hourly earnings', 'Tips', 'Bonuses', 'Estimated gross earnings', 'Estimated taxes', 'Effective hourly earnings']);
+  const comm = takeHome.compute({ values: { ...V.takeHome, payType: 'commission' }, type: 'employee', profession: 'barber' });
+  near(comm.raw.commissionEarnings, 800);
+  near(comm.raw.hoursWorked, 150, 'commission uses the optional hours field');
+  assert.deepEqual(shown(comm.view), ['Service revenue generated', 'Commission earnings', 'Tips', 'Bonuses', 'Estimated gross earnings', 'Estimated taxes', 'Effective hourly earnings']);
+  const mixed = takeHome.compute({ values: V.takeHome, type: 'employee', profession: 'barber' });
+  near(mixed.raw.gross, 800 + 2400 + 500 + 100);
+  assert.equal(mixed.view.primary.value, '$2,850', '$3,800 gross − 25% tax');
+  assert.equal(mixed.view.primary.label, 'Estimated take-home pay this month');
+  assert.equal(card(mixed.view, 'Effective hourly earnings').value, '$23.75/hour');
+  assert.match(mixed.view.insight, /^Counting commission, wages, tips, and bonuses, every hour you work earns about \$23\.75 before tax/);
+  assert.match(takeHome.compute({ values: { ...V.takeHome, payType: 'hourly', bonuses: 0 }, type: 'employee', profession: 'barber' }).view.insight, /^Counting wages and tips, /);
+  for (const v of [hourly.view, comm.view, mixed.view]) {
+    assert.doesNotMatch(textOf(v.cards), /rent|payroll|business profit/i, 'employees see no business numbers');
+    assert.match(textOf(v), /take-home/i);
+  }
+  const noHours = takeHome.compute({ values: { ...V.takeHome, payType: 'commission', hoursOptional: 0 }, type: 'employee', profession: 'barber' });
+  assert.equal(card(noHours.view, 'Effective hourly earnings'), undefined);
+  // errors land on the field the employee can see
+  const bad = takeHome.compute({ values: { ...V.takeHome, payType: 'commission', payCommissionRate: 0, revenueGenerated: 0 }, type: 'employee', profession: 'barber' });
+  assert.deepEqual(Object.keys(bad.errors).sort(), ['payCommissionRate', 'revenueGenerated']);
+  const noHrs = takeHome.compute({ values: { ...V.takeHome, payType: 'hourly', hoursWorked: 0 }, type: 'employee', profession: 'barber' });
+  assert.deepEqual(Object.keys(noHrs.errors), ['hoursWorked']);
+});
+
+test('capacity: primary is whole clients; scenario table built lazily from the engine; employee wording', () => {
+  const r = capacity.compute({ values: V.capacity, type: 'solo', profession: 'esthetician' });
+  assert.equal(r.view.primary.value, '80');
+  assert.equal(typeof r.view.extraNode, 'function');
+  assert.deepEqual(r.raw.scenarios.map((s) => s.ticket), [60, 80, 100, 120, 140]);
+  assert.equal(card(r.view, 'Working hours with clients').value, '80 a month');
+  assert.equal(card(r.view, 'Clients to add').value, '22');
+  assert.match(r.view.insight, /about 80 clients a month, or 4 a day/);
+  const ninety = capacity.compute({ values: { ...V.capacity, serviceMinutes: 90 }, type: 'solo', profession: 'esthetician' });
+  assert.equal(card(ninety.view, 'Working hours with clients').value, '120 a month');
+  const emp = capacity.compute({ values: V.capacity, type: 'employee', profession: 'cosmetologist' });
+  assert.equal(emp.view.primary.label, 'Clients a month to reach your service revenue goal');
+  assert.ok(emp.view.method.some((m) => /Profit & Take-Home/.test(m)));
+  assert.equal(capacity.compute({ values: { ...V.capacity, averageTicket: 0 }, type: 'solo', profession: 'esthetician' }).errors.averageTicket,
+    'Enter an average service price greater than $0.');
+});
+
+test('price increase: the spec sentence, rent and labor in the cost, owner commission on the new price', () => {
+  const r = increase.compute({ values: { ...V.increase, newPrice: 110, monthlyAppointments: 66 }, type: 'solo', profession: 'esthetician' });
+  assert.match(r.view.insight, /^You could lose approximately 6 clients per month and generate the same service revenue\./);
+  assert.equal(r.view.primary.value, '6');
+  const solo = increase.compute({ values: V.increase, type: 'solo', profession: 'esthetician' });
+  near(solo.raw.laborTime, 30, 'solo: your pay per hour × 1 hour; the owner wage is ignored');
+  near(solo.raw.commissionRate, 0);
+  near(solo.raw.rentShare, 10);
+  assert.equal(card(solo.view, 'Your pay per appointment').value, '$30.00');
+  const owner = increase.compute({ values: V.increase, type: 'owner', profession: 'esthetician' });
+  near(owner.raw.laborTime, 20); near(owner.raw.next.commission, 46);
+  assert.equal(card(owner.view, 'Labor per appointment').value, '$66.00');
+  const none = increase.compute({ values: { ...V.increase, newPrice: 100 }, type: 'solo', profession: 'esthetician' });
+  assert.equal(none.view.primary.value, 'No change');
+  const cut = increase.compute({ values: { ...V.increase, newPrice: 80 }, type: 'solo', profession: 'esthetician' });
+  assert.equal(cut.view.primary.value, '15'); assert.match(cut.view.insight, /price cut/);
+  assert.doesNotMatch(textOf(cut.view), /NaN|Infinity/);
+});
+
+test('discount: statuses read correctly at 0%, normal, break-even and excessive discounts', () => {
+  const at = (d, type = 'solo') => discount.compute({ values: { ...V.discount, discountRate: d }, type, profession: 'esthetician' });
+  assert.match(at(0).view.insight, /At full price this 60-minute facial earns \$78\.00/);
+  const normal = at(20);
+  assert.equal(normal.view.primary.value, '$120.00');
+  assert.equal(card(normal.view, 'Profit lost per appointment').value, '$29.10');
+  assert.equal(card(normal.view, 'Break-even discount').value, '53.6%');
+  assert.equal(card(normal.view, 'Maximum target-profit discount').value, '32.8%');
+  assert.equal(card(normal.view, 'Total profit difference').value, '$728 less', 'a difference in words, never a negative amount');
+  assert.equal(card(normal.view, 'Total profit difference').loss, true);
+  assert.equal(typeof normal.view.extraNode, 'function', 'promotion table');
+  const even = at(normal.raw.breakEvenDiscount * 100);
+  assert.match(even.view.insight, /is the break-even discount/);
+  const excessive = at(60);
+  assert.equal(excessive.view.primary.loss, true);
+  assert.match(excessive.view.insight, /more than this service can carry/);
+  assert.equal(card(excessive.view, 'Profit after discount').value, 'Loss of $9.30');
+  near(at(20, 'owner').raw.after.commission, 48, 'owner commission on the sale price');
+  near(at(20).raw.after.commission, 0, 'solo: no commission');
+  assert.equal(discount.compute({ values: { ...V.discount, targetMargin: 29 }, type: 'solo', profession: 'esthetician' }).errors.targetMargin, 'Enter a profit margin of at least 30%.');
+});
+
+test('menu: rankings drive cards and recommendations; descriptive, not prescriptive; owner vs solo labor', () => {
+  const solo = menu.compute({ values: V.menu, type: 'solo', profession: 'esthetician' });
+  near(solo.raw.services[0].labor, 30, 'solo: your pay per hour, row wages ignored');
+  assert.equal(solo.view.primary.value, 'Facial');
+  assert.equal(card(solo.view, 'Highest profit per appointment').value, 'Peel');
+  assert.equal(card(solo.view, 'Lowest-performing service').value, 'Lash fill');
+  assert.deepEqual(solo.view.recommendations, [
+    'Your “Peel” service generates the most profit per appointment.',
+    'Your “Facial” service generates the highest profit per hour.',
+    '“Lash fill” earns the least per hour ($20/hour). If that gap matters to you, its price or duration may be worth a look.',
+  ]);
+  const owner = menu.compute({ values: V.menu, type: 'owner', profession: 'esthetician' });
+  near(owner.raw.services[0].labor, 20 + 36, 'owner: row wage × 1 hour + 30% of $120');
+  const q = params(owner.view);
+  assert.deepEqual([q.get('currentPrice'), q.get('providerWage'), q.get('commissionRate'), q.get('productCost'), q.get('targetHourly')], ['70', '20', '30', '10.00', null]);
+  assert.equal(params(solo.view).get('targetHourly'), '30');
+  const loss = menu.compute({ values: { ...V.menu, services: [V.menu.services[0], { ...V.menu.services[2], price: 40 }] }, type: 'solo', profession: 'esthetician' });
+  assert.match(loss.view.recommendations.at(-1), /“Lash fill” loses money at its current price, length and costs/);
+  assert.equal(card(loss.view, 'Lowest-performing service').loss, true);
+  const similar = menu.compute({ values: { ...V.menu, services: [100, 102, 104].map((price, i) => ({ ...V.menu.services[0], name: `S${i}`, price })) }, type: 'solo', profession: 'esthetician' });
+  assert.match(similar.view.recommendations[0], /similar profit per hour/);
+  assert.equal(similar.view.recommendations.length, 1, 'no laggard is named when services are close');
+  const one = menu.compute({ values: { ...V.menu, services: [V.menu.services[0]] }, type: 'solo', profession: 'esthetician' });
+  assert.deepEqual(one.view.recommendations, ['Add another service to compare and rank your menu.']);
+  for (const r of [solo, owner, loss, similar, one]) {
+    for (const t of r.view.recommendations) assert.doesNotMatch(t, /\b(should|must|need to|have to|drop|remove|cut|get rid|stop offering)\b/i, t);
+  }
+  assert.equal(typeof recommendations, 'function');
 });

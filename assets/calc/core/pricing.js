@@ -2,6 +2,7 @@
 import { allocateOverhead, allocateRent, DEFAULT_HOURS_PER_MONTH } from './overhead.js';
 import { workingHours } from './capacity.js';
 import { guard } from './validation.js';
+import { serviceCostParts, profitAt } from './costs.js';
 
 const ok = (x) => ({ ok: true, ...x });
 const fail = (errors) => ({ ok: false, errors });
@@ -227,5 +228,49 @@ export function calculateEmployeeEarnings({
     weeklyServiceRevenue: annualServiceRevenue / workingWeeksPerYear,
     perClientHour,
     exampleServiceMinutes, exampleServiceRevenue: perClientHour * (exampleServiceMinutes / 60),
+  });
+}
+
+// ---------- Price Increase ----------
+/**
+ * What a price change does to one service's month. Costs come from serviceCostParts (products, rent share, labor;
+ * commission and card fees follow the price), so a higher price also pays a little more commission and processing.
+ *   current revenue     = current price × monthly appointments
+ *   new appointments    = monthly appointments × (1 − expected client loss)
+ *   new revenue         = new price × new appointments
+ *   monthly profit      = appointments × (price − cost per appointment at that price)
+ *   break-even clients  = current revenue ÷ new price                 (spec: clients that keep revenue where it is)
+ *   clients you can lose = monthly appointments − break-even clients (whole clients rounded down, so revenue never drops)
+ * A price cut makes this negative: the clients you would need to gain instead.
+ */
+export function calculatePriceIncrease({ currentPrice, newPrice, monthlyAppointments, expectedLossRate = 0, ...cost }) {
+  const errors = guard([
+    ['currentPrice', currentPrice, (v) => v > 0, 'Enter a current service price greater than $0.'],
+    ['newPrice', newPrice, (v) => v > 0, 'Enter a new service price greater than $0.'],
+    ['monthlyAppointments', monthlyAppointments, (v) => v > 0, 'Enter monthly appointments greater than 0.'],
+    ['expectedLossRate', expectedLossRate, (v) => v >= 0 && v < 1, 'Enter an expected client loss below 100%.'],
+  ]);
+  const parts = serviceCostParts(cost);
+  if (!parts.ok) Object.assign(errors, parts.errors);
+  if (Object.keys(errors).length) return fail(errors);
+  const month = (price, appointments) => {
+    const one = profitAt(parts, price);
+    return { ...one, appointments, revenue: price * appointments, monthlyCost: one.totalCost * appointments, monthlyProfit: one.profit * appointments };
+  };
+  const current = month(currentPrice, monthlyAppointments);
+  const newAppointments = monthlyAppointments * (1 - expectedLossRate);
+  const next = month(newPrice, newAppointments);
+  const change = newPrice - currentPrice;
+  const status = Math.abs(change) < CENT ? 'none' : change > 0 ? 'increase' : 'decrease';
+  const breakEvenClients = current.revenue / newPrice;
+  const clientsYouCanLose = monthlyAppointments - breakEvenClients;
+  return ok({
+    ...parts, status, change, changeRate: change / currentPrice, current, next, newAppointments, expectedLossRate,
+    revenueIncrease: next.revenue - current.revenue, annualRevenueIncrease: (next.revenue - current.revenue) * 12,
+    profitIncrease: next.monthlyProfit - current.monthlyProfit, annualProfitIncrease: (next.monthlyProfit - current.monthlyProfit) * 12,
+    breakEvenClients, clientsYouCanLose,
+    clientsYouCanLoseWhole: Math.max(0, Math.floor(clientsYouCanLose + 1e-9)),
+    clientsToGainWhole: Math.max(0, Math.ceil(-clientsYouCanLose - 1e-9)),
+    lossRateYouCanAbsorb: clientsYouCanLose / monthlyAppointments,
   });
 }

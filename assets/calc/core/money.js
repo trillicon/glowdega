@@ -22,7 +22,8 @@ export function formatMoney(value, { cents: forceCents = false, whole: forceWhol
   if (up) return whole.format(Math.ceil(r - 0.005)).replace('-$0', '$0');
   if (forceWhole) return whole.format(Math.round(value)).replace('-$0', '$0');
   if (forceCents) return cents.format(r);
-  if (Math.abs(r) >= 100 || Number.isInteger(r)) return whole.format(Math.round(value)).replace('-$0', '$0');
+  // whole dollars from the cent-rounded value, so float noise (727.4999…) can't turn $727.50 into $727
+  if (Math.abs(r) >= 100 || Number.isInteger(r)) return whole.format(Math.round(r)).replace('-$0', '$0');
   return cents.format(r);
 }
 

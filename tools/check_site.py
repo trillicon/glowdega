@@ -116,8 +116,9 @@ for name, value in (('HOUSE_RAIL', HOUSE_RAIL), ('HOUSE_INLINE', HOUSE_INLINE), 
 
 check('href="/cdn-cgi/access/logout"' in read('admin/index.html'), 'admin: no Log out link')
 
-# Resources: the hub plus the five Sprint-1 calculators (tools/resources_site.py). No ads on these pages.
-CALCS = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even']
+# Resources: the hub plus all ten calculators (tools/resources_site.py). No ads on these pages.
+CALCS = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even',
+         'profit-take-home', 'menu-profitability', 'capacity-clients', 'price-increase', 'discount-promotion']
 res = ['resources/index.html'] + [f'resources/{c}/index.html' for c in CALCS]
 check(sorted(p for p in pages if p.startswith('resources')) == sorted(res), f'resources: expected exactly {res}')
 for p in res:
@@ -135,7 +136,8 @@ for p in res:
               f'{p}: missing live results region, coaching link or disclaimer')
 hub = read('resources/index.html') if os.path.exists(os.path.join(SITE, 'resources/index.html')) else ''
 check(all(f'href="{c}/"' in hub for c in CALCS), 'resources hub: a live calculator is not linked')
-check(hub.count('class="hub-card is-soon"') == 5 and not re.search(r'<a [^>]*is-soon', hub), 'resources hub: expected 5 unlinked coming-soon calculators')
+check(hub.count('class="hub-card"') == len(CALCS) and 'hub-card is-soon' not in hub, 'resources hub: every calculator card must be live (no coming-soon calculators)')
+check(hub.count('<li class="hub-soon" aria-disabled="true">') == 3 and not re.search(r'<a [^>]*hub-soon', hub), 'resources hub: expected 3 unlinked Additional Resources items')
 
 css = read('assets/style.css')
 for font in re.findall(r'url\((fonts/[^)]+)\)', css):

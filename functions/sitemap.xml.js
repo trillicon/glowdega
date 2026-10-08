@@ -4,7 +4,8 @@ import { esc, isoDay } from './_lib/site.js';
 
 // The beauty business calculators (static pages built by tools/build.py; tests/calc-pages.test.mjs keeps this in step).
 export const RESOURCES = ['/resources/', '/resources/service-pricing/', '/resources/hourly-rate/', '/resources/service-cost/',
-  '/resources/service-profitability/', '/resources/break-even/'];
+  '/resources/service-profitability/', '/resources/break-even/', '/resources/profit-take-home/', '/resources/menu-profitability/',
+  '/resources/capacity-clients/', '/resources/price-increase/', '/resources/discount-promotion/'];
 
 export async function onRequestGet({ request, env }) {
   const origin = new URL(request.url).origin;

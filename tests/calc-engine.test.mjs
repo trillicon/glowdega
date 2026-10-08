@@ -1,4 +1,4 @@
-// node --test tests/  — the calculator engine (assets/calc/core): spec §28 Sprint-1 cases, validation, no NaN/Infinity.
+// node --test tests/  — the calculator engine (assets/calc/core): spec §28 cases for all ten calculators, validation, no NaN/Infinity.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateServicePricing, calculateHourlyRate, calculateEmployeeEarnings, RANGE_HEADROOM, MIN_PROFIT_MARGIN, EXAMPLE_SERVICE_MINUTES } from '../assets/calc/core/pricing.js';
@@ -9,6 +9,12 @@ import { parseNumber, validateFields, percentRule, hasBadNumber } from '../asset
 import { formatMoney, describeProfit, roundCurrency } from '../assets/calc/core/money.js';
 import { formatPercent, toRate } from '../assets/calc/core/percentages.js';
 import { allocateOverhead, allocateRent, DEFAULT_HOURS_PER_MONTH } from '../assets/calc/core/overhead.js';
+import { calculatePriceIncrease } from '../assets/calc/core/pricing.js';
+import { calculateBusinessProfit, calculateEmployeeTakeHome } from '../assets/calc/core/profit.js';
+import { calculateDiscount } from '../assets/calc/core/discount.js';
+import { calculateCapacity, scenarioTickets } from '../assets/calc/core/capacity.js';
+import { calculateMenuProfitability } from '../assets/calc/core/menu.js';
+import { serviceCostParts, profitAt } from '../assets/calc/core/costs.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg ?? ''} expected ${b}, got ${a}`);
 const BASE = { durationMinutes: 60, productCost: 10, targetHourly: 50 };
@@ -633,4 +639,336 @@ test('employee hourly current wage: blank shows only the required wage; negative
   assert.equal(calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: 0 }).current, null, 'a blank field reads as 0');
   assert.ok(calculateEmployeeEarnings({ ...EMP, payType: 'hourly', currentHourlyWage: -1 }).errors.currentHourlyWage);
   assert.equal(calculateEmployeeEarnings({ ...EMP, payType: 'commission', commissionRate: 0.4, currentHourlyWage: -1 }).ok, true);
+});
+
+// ======================= Sprint 2 =======================
+// ---------- shared cost parts (price increase, discount) ----------
+test('service cost parts: rent share by service time + labor are fixed per service; commission and processing follow the price', () => {
+  const parts = serviceCostParts({ durationMinutes: 90, productCost: 12, monthlyRent: 2000, hoursPerMonth: 160, laborHourly: 20, commissionRate: 0.4, processingRate: 0.03 });
+  near(parts.rentShare, 18.75, '$2,000 ÷ 160 × 1.5');
+  near(parts.laborTime, 30);
+  near(parts.fixedPerService, 12 + 18.75 + 30);
+  const at = profitAt(parts, 120);
+  near(at.commission, 48); near(at.processing, 3.6); near(at.labor, 78);
+  near(at.profit, 120 - 60.75 - 51.6);
+  assert.equal(serviceCostParts({ durationMinutes: 0 }).errors.durationMinutes, 'Enter a service duration greater than 0 minutes.');
+  assert.match(serviceCostParts({ durationMinutes: 60, commissionRate: 0.97, processingRate: 0.03 }).errors.commissionRate, /below 100%/);
+});
+
+// ---------- profit & take-home (spec §10, §28 profit) ----------
+const BIZ = { serviceRevenue: 12000, retailRevenue: 0, productCosts: 1000, monthlyRent: 2000, fixedExpenses: 500, variableExpenses: 500, monthlyPay: 5000, taxRate: 0.25 };
+
+test('profit: profitable business — profit after your pay, taxes on pay + profit, take-home = pay + profit − taxes', () => {
+  const r = calculateBusinessProfit(BIZ);
+  assert.equal(r.ok, true);
+  near(r.totalRevenue, 12000);
+  near(r.operatingCosts, 4000, 'products + rent + other fixed + variable');
+  near(r.businessExpenses, 9000, 'your pay is a business expense');
+  near(r.businessProfit, 3000);
+  near(r.ownerEarnings, 8000);
+  near(r.estimatedTaxes, 2000);
+  near(r.takeHome, 6000);
+  near(r.takeHome, r.ownerComp + r.businessProfit - r.estimatedTaxes, 'the model, exactly');
+  assert.equal(r.status, 'profit');
+});
+
+test('profit: break-even business — profit $0 after paying you; owner pay is never double-counted', () => {
+  const r = calculateBusinessProfit({ ...BIZ, monthlyPay: 8000 });
+  near(r.businessProfit, 0);
+  assert.equal(r.status, 'even');
+  near(r.takeHome, 6000, 'same take-home as paying yourself $5,000: pay and profit are one pot, counted once');
+  for (const pay of [0, 2500, 5000, 8000, 9000]) near(calculateBusinessProfit({ ...BIZ, monthlyPay: pay }).takeHome, 6000, `pay ${pay}`);
+  // a double count would add pay to take-home on top of (revenue − all expenses incl. pay) — it doesn't
+  near(r.takeHome, (12000 - 4000) * 0.75);
+});
+
+test('profit: loss-making business — loss labelled, no tax on a loss, take-home is a shortfall', () => {
+  const r = calculateBusinessProfit({ ...BIZ, serviceRevenue: 3000 });
+  near(r.businessProfit, -6000);
+  assert.equal(r.status, 'loss');
+  near(r.ownerEarnings, -1000);
+  near(r.estimatedTaxes, 0, 'nothing to tax');
+  near(r.takeHome, -1000);
+  assert.equal(r.earningsShortfall, true);
+  assert.deepEqual(describeProfit(r.businessProfit), { word: 'Loss', amount: 6000, loss: true, even: false });
+  const partial = calculateBusinessProfit({ ...BIZ, monthlyPay: 9000 });
+  near(partial.businessProfit, -1000, 'paying yourself more than the business earns is a business loss');
+  near(partial.takeHome, 6000, 'but your take-home is still what the business really earned, after tax');
+});
+
+test('profit: rent and owner labor (payroll + commission + owner pay) are expenses; solo pay is its own field', () => {
+  const owner = calculateBusinessProfit({ ...BIZ, monthlyPay: 0, monthlyPayroll: 3000, commissionRate: 0.1, ownerPay: 4000 });
+  near(owner.commission, 1200, '10% of service revenue');
+  near(owner.labor, 4200);
+  near(owner.operatingCosts, 4000 + 3000 + 1200);
+  near(owner.businessProfit, 12000 - 8200 - 4000);
+  near(owner.takeHome, (12000 - 8200) * 0.75);
+  const noRent = calculateBusinessProfit({ ...BIZ, monthlyRent: 0 });
+  near(noRent.businessProfit - calculateBusinessProfit(BIZ).businessProfit, 2000, 'rent comes straight off profit');
+  const retail = calculateBusinessProfit({ ...BIZ, retailRevenue: 800 });
+  near(retail.totalRevenue, 12800);
+  assert.equal(calculateBusinessProfit({ ...BIZ, serviceRevenue: 0 }).errors.serviceRevenue, 'Enter your monthly service revenue.');
+  assert.match(calculateBusinessProfit({ ...BIZ, taxRate: 1 }).errors.taxRate, /below 100%/);
+  assert.match(calculateBusinessProfit({ ...BIZ, commissionRate: 1 }).errors.commissionRate, /below 100%/);
+  assert.match(calculateBusinessProfit({ ...BIZ, monthlyRent: -1 }).errors.monthlyRent, /\$0 or more/);
+});
+
+test('employee take-home: hourly, commission and hourly + commission, each with tips, bonuses and tax', () => {
+  const hourly = calculateEmployeeTakeHome({ payType: 'hourly', hourlyWage: 20, hoursWorked: 160, tips: 400, bonuses: 100, taxRate: 0.2,
+    serviceRevenue: 9000, commissionRate: 0.4 });
+  near(hourly.hourlyEarnings, 3200); near(hourly.commissionEarnings, 0, 'commission ignored for hourly pay');
+  near(hourly.gross, 3700); near(hourly.estimatedTaxes, 740); near(hourly.takeHome, 2960);
+  near(hourly.effectiveHourly, 3700 / 160); near(hourly.takeHomePerHour, 2960 / 160);
+  const comm = calculateEmployeeTakeHome({ payType: 'commission', serviceRevenue: 9000, commissionRate: 0.4, tips: 400, taxRate: 0.25, hourlyWage: 30, hoursWorked: 0 });
+  near(comm.commissionEarnings, 3600); near(comm.hourlyEarnings, 0, 'wage ignored on commission'); near(comm.gross, 4000); near(comm.takeHome, 3000);
+  assert.equal(comm.hasHours, false); near(comm.effectiveHourly, 0, 'no hours, no per-hour figure (never Infinity)');
+  const mixed = calculateEmployeeTakeHome({ payType: 'mixed', serviceRevenue: 8000, commissionRate: 0.1, hourlyWage: 15, hoursWorked: 160, tips: 500, taxRate: 0.2 });
+  near(mixed.gross, 800 + 2400 + 500); near(mixed.takeHome, 3700 * 0.8);
+  for (const r of [hourly, comm, mixed]) assert.equal(hasBadNumber(r), false);
+});
+
+test('employee take-home: each pay type requires its own fields; 0%/100% commission and 100% tax are rejected', () => {
+  assert.equal(calculateEmployeeTakeHome({ payType: 'hourly', hourlyWage: 20, hoursWorked: 0 }).errors.hoursWorked, 'Enter the hours you work per month.');
+  assert.equal(calculateEmployeeTakeHome({ payType: 'hourly', hourlyWage: 0, hoursWorked: 100 }).errors.hourlyWage, 'Enter an hourly wage greater than $0.');
+  assert.match(calculateEmployeeTakeHome({ payType: 'commission', serviceRevenue: 5000, commissionRate: 0 }).errors.commissionRate, /above 0% and below 100%/);
+  assert.match(calculateEmployeeTakeHome({ payType: 'commission', serviceRevenue: 5000, commissionRate: 1 }).errors.commissionRate, /above 0% and below 100%/);
+  assert.equal(calculateEmployeeTakeHome({ payType: 'commission', serviceRevenue: 0, commissionRate: 0.4 }).errors.serviceRevenue, 'Enter the monthly service revenue you generate.');
+  const mixed = calculateEmployeeTakeHome({ payType: 'mixed', serviceRevenue: 0, commissionRate: 0, hourlyWage: 0, hoursWorked: 0 });
+  assert.deepEqual(Object.keys(mixed.errors).sort(), ['commissionRate', 'hourlyWage', 'hoursWorked', 'serviceRevenue']);
+  assert.match(calculateEmployeeTakeHome({ payType: 'hourly', hourlyWage: 20, hoursWorked: 100, taxRate: 1 }).errors.taxRate, /below 100%/);
+  assert.match(calculateEmployeeTakeHome({ payType: 'salary' }).errors.payType, /hourly, commission, or hourly \+ commission/);
+});
+
+// ---------- discount & promotion (spec §11, §28 discount) ----------
+const DISC = { regularPrice: 150, durationMinutes: 60, productCost: 15, monthlyRent: 2000, hoursPerMonth: 160, laborHourly: 40, processingRate: 0.03, targetMargin: 0.3 };
+
+test('discount: 0% discount changes nothing', () => {
+  const r = calculateDiscount({ ...DISC, discountRate: 0 });
+  assert.equal(r.status, 'none');
+  near(r.salePrice, 150); near(r.profitLost, 0); near(r.reductionRate, 0);
+  near(r.before.profit, 150 * 0.97 - (15 + 12.5 + 40), 'rent share $12.50 and labor $40 are in the cost');
+  near(r.before.profit, 78);
+});
+
+test('discount: normal discount — sale price, profit before/after, profit lost and reduction %', () => {
+  const r = calculateDiscount({ ...DISC, discountRate: 0.2 });
+  near(r.salePrice, 120);
+  near(r.after.profit, 120 * 0.97 - 67.5);
+  near(r.profitLost, 78 - 48.9);
+  near(r.reductionRate, 29.1 / 78);
+  assert.equal(r.status, 'target', '48.9 ÷ 120 = 41% margin keeps the 30% target');
+  assert.equal(calculateDiscount({ ...DISC, discountRate: 0.4 }).status, 'below-target', 'still profitable, under 30%');
+});
+
+test('discount: break-even discount leaves exactly $0 profit with labor paid; target discount keeps exactly the margin', () => {
+  const r = calculateDiscount({ ...DISC, discountRate: 0.2 });
+  near(r.breakEvenSalePrice, 67.5 / 0.97);
+  near(r.breakEvenDiscount, 1 - 67.5 / 0.97 / 150);
+  const at = calculateDiscount({ ...DISC, discountRate: r.breakEvenDiscount });
+  near(at.after.profit, 0, 'profit is $0 at the break-even discount');
+  assert.equal(at.status, 'even');
+  near(r.targetSalePrice, 67.5 / (0.97 - 0.3));
+  const t = calculateDiscount({ ...DISC, discountRate: r.targetDiscount });
+  near(t.after.margin, 0.3, 'margin is exactly the target at the maximum target-profit discount');
+  assert.equal(t.status, 'target');
+  assert.ok(r.targetDiscount < r.breakEvenDiscount);
+});
+
+test('discount: excessive discount is a labelled loss; 100% or more is rejected; target margin floor is 30%', () => {
+  const r = calculateDiscount({ ...DISC, discountRate: 0.6 });
+  assert.equal(r.status, 'loss');
+  near(r.after.profit, 60 * 0.97 - 67.5);
+  assert.equal(describeProfit(r.after.profit).word, 'Loss');
+  assert.equal(calculateDiscount({ ...DISC, discountRate: 1 }).errors.discountRate, 'Enter a discount below 100%.');
+  assert.equal(calculateDiscount({ ...DISC, discountRate: 1.5 }).errors.discountRate, 'Enter a discount below 100%.');
+  assert.equal(calculateDiscount({ ...DISC, discountRate: 0.1, targetMargin: 0.29 }).errors.targetMargin, 'Enter a profit margin of at least 30%.');
+  assert.equal(calculateDiscount({ ...DISC, discountRate: 0.1, targetMargin: 0.3 }).ok, true);
+  assert.match(calculateDiscount({ ...DISC, processingRate: 1 }).errors.processingRate, /below 100%/);
+  const unprofitable = calculateDiscount({ ...DISC, regularPrice: 60, discountRate: 0.1 });
+  assert.equal(unprofitable.regularProfitable, false);
+  near(unprofitable.breakEvenDiscount, 0, 'no discount is safe when full price already loses');
+  near(unprofitable.targetDiscount, 0);
+});
+
+test('discount: owner labor — wage by time plus commission on the SALE price; promotion scenario', () => {
+  const owner = calculateDiscount({ ...DISC, laborHourly: 20, commissionRate: 0.4, discountRate: 0.2, promoAppointments: 25 });
+  near(owner.after.commission, 48, '40% of $120, not of $150');
+  near(owner.after.labor, 20 + 48);
+  near(owner.after.profit, 120 - (15 + 12.5 + 20) - 48 - 3.6);
+  const r = calculateDiscount({ ...DISC, discountRate: 0.2, promoAppointments: 25 });
+  near(r.promo.revenueWithout, 3750); near(r.promo.revenueWith, 3000);
+  near(r.promo.profitWithout, 78 * 25); near(r.promo.profitWith, 48.9 * 25);
+  near(r.promo.profitDifference, -29.1 * 25);
+  assert.equal(r.promo.appointmentsToRecover, Math.ceil(29.1 * 25 / 78));
+  assert.equal(calculateDiscount({ ...DISC, discountRate: 0.2 }).promo, null, 'no appointments, no scenario');
+  const noRent = calculateDiscount({ ...DISC, discountRate: 0.2, monthlyRent: 0 });
+  near(noRent.after.profit - r.after.profit, 12.5, 'rent share is in the cost');
+});
+
+// ---------- capacity & clients (spec §16, §28 capacity) ----------
+test('capacity: normal target — clients a month, week, day and working hours (60 or 90 minutes)', () => {
+  const r = calculateCapacity({ revenueGoal: 8000, averageTicket: 100, workingDaysPerMonth: 20, serviceMinutes: 60 });
+  near(r.clients, 80); assert.equal(r.clientsWhole, 80);
+  near(r.clientsPerWeek, 80 / (52 / 12)); near(r.clientsPerDay, 4);
+  near(r.hoursPerMonth, 80); near(r.hoursPerDay, 4);
+  near(calculateCapacity({ revenueGoal: 8000, averageTicket: 100, serviceMinutes: 90 }).hoursPerMonth, 120);
+  const odd = calculateCapacity({ revenueGoal: 8000, averageTicket: 150 });
+  assert.equal(odd.clientsWhole, 54, '53.3 clients round up: you can’t book part of one');
+});
+
+test('capacity: zero (or negative, or blank) average ticket is a named error, never a division by zero', () => {
+  for (const t of [0, -50, NaN]) {
+    const r = calculateCapacity({ revenueGoal: 8000, averageTicket: t });
+    assert.equal(r.ok, false);
+    assert.equal(r.errors.averageTicket, 'Enter an average service price greater than $0.');
+  }
+  assert.match(calculateCapacity({ revenueGoal: 0, averageTicket: 100 }).errors.revenueGoal, /greater than \$0/);
+  assert.match(calculateCapacity({ revenueGoal: 8000, averageTicket: 100, workingDaysPerMonth: 32 }).errors.workingDaysPerMonth, /between 1 and 31/);
+});
+
+test('capacity: high ticket — fewer than one client still books one; nothing is capped', () => {
+  const r = calculateCapacity({ revenueGoal: 8000, averageTicket: 20000 });
+  near(r.clients, 0.4); assert.equal(r.clientsWhole, 1); near(r.hoursPerMonth, 1);
+  const huge = calculateCapacity({ revenueGoal: 9_000_000, averageTicket: 3 });
+  assert.equal(huge.clientsWhole, 3_000_000);
+  assert.equal(hasBadNumber(huge), false);
+});
+
+test('capacity: the scenario table is computed around your ticket, not hard-coded', () => {
+  assert.deepEqual(scenarioTickets(100), [60, 80, 100, 120, 140]);
+  assert.deepEqual(scenarioTickets(150), [90, 120, 150, 180, 210]);
+  assert.deepEqual(scenarioTickets(12), [8, 10, 12, 14, 16], "steps under $5 round to $1");
+  assert.deepEqual(scenarioTickets(0), []);
+  const r = calculateCapacity({ revenueGoal: 8000, averageTicket: 100, serviceMinutes: 90 });
+  assert.deepEqual(r.scenarios.map((s) => [s.ticket, s.clientsWhole, s.yours]), [[60, 134, false], [80, 100, false], [100, 80, true], [120, 67, false], [140, 58, false]]);
+  near(r.scenarios[2].hours, 120);
+  const other = calculateCapacity({ revenueGoal: 8000, averageTicket: 175 });
+  assert.notDeepEqual(other.scenarios.map((s) => s.ticket), r.scenarios.map((s) => s.ticket), 'a different ticket gives a different table');
+  for (const s of other.scenarios) assert.equal(s.clientsWhole, Math.ceil(8000 / s.ticket - 1e-9));
+});
+
+test('capacity: current clients and ticket measure the gap (or say the goal is met)', () => {
+  const r = calculateCapacity({ revenueGoal: 8000, averageTicket: 100, currentClients: 55, currentTicket: 105 });
+  near(r.current.revenue, 5775); near(r.current.revenueGap, 2225);
+  assert.equal(r.current.neededAtTicket, 77); assert.equal(r.current.moreClients, 22); assert.equal(r.current.goalMet, false);
+  const blankTicket = calculateCapacity({ revenueGoal: 8000, averageTicket: 100, currentClients: 90 });
+  near(blankTicket.current.ticket, 100, 'blank current ticket uses the average service price');
+  assert.equal(blankTicket.current.goalMet, true); assert.equal(blankTicket.current.moreClients, 0);
+  assert.equal(calculateCapacity({ revenueGoal: 8000, averageTicket: 100 }).current, null);
+});
+
+// ---------- price increase (spec §18, §28 price increase) ----------
+const PI = { currentPrice: 100, newPrice: 115, monthlyAppointments: 60, durationMinutes: 60, productCost: 10, monthlyRent: 1600, hoursPerMonth: 160, laborHourly: 30 };
+
+test('price increase: no increase — nothing changes and no clients can be lost', () => {
+  const r = calculatePriceIncrease({ ...PI, newPrice: 100 });
+  assert.equal(r.status, 'none');
+  near(r.revenueIncrease, 0); near(r.annualRevenueIncrease, 0); near(r.profitIncrease, 0);
+  near(r.clientsYouCanLose, 0); assert.equal(r.clientsYouCanLoseWhole, 0);
+});
+
+test('price increase: revenue and profit, with rent share and labor in the service cost', () => {
+  const r = calculatePriceIncrease(PI);
+  assert.equal(r.status, 'increase');
+  near(r.rentShare, 10, '$1,600 ÷ 160 hours × 1 hour');
+  near(r.current.totalCost, 10 + 10 + 30);
+  near(r.current.revenue, 6000); near(r.next.revenue, 6900);
+  near(r.revenueIncrease, 900); near(r.annualRevenueIncrease, 10800);
+  near(r.current.monthlyProfit, 50 * 60); near(r.next.monthlyProfit, 65 * 60);
+  near(r.breakEvenClients, 6000 / 115);
+  near(r.clientsYouCanLose, 60 - 6000 / 115); assert.equal(r.clientsYouCanLoseWhole, 7);
+  const noRent = calculatePriceIncrease({ ...PI, monthlyRent: 0 });
+  near(noRent.current.monthlyProfit - r.current.monthlyProfit, 600, 'rent is part of each appointment’s cost');
+  const owner = calculatePriceIncrease({ ...PI, laborHourly: 20, commissionRate: 0.4 });
+  near(owner.current.commission, 40); near(owner.next.commission, 46, 'commission rises with the new price');
+  near(owner.next.profit, 115 - (10 + 10 + 20) - 46);
+});
+
+test('price increase: large increase — half the clients can leave when the price doubles', () => {
+  const r = calculatePriceIncrease({ ...PI, newPrice: 200 });
+  near(r.breakEvenClients, 30); assert.equal(r.clientsYouCanLoseWhole, 30); near(r.lossRateYouCanAbsorb, 0.5);
+  near(r.changeRate, 1);
+});
+
+test('price increase: client-loss break-even — losing exactly that many clients keeps revenue where it is', () => {
+  const r = calculatePriceIncrease(PI);
+  const lose = calculatePriceIncrease({ ...PI, expectedLossRate: r.clientsYouCanLose / PI.monthlyAppointments });
+  near(lose.next.revenue, r.current.revenue, 'same service revenue');
+  near(lose.revenueIncrease, 0);
+  const whole = calculatePriceIncrease({ ...PI, expectedLossRate: r.clientsYouCanLoseWhole / PI.monthlyAppointments });
+  assert.ok(whole.next.revenue >= r.current.revenue, 'rounded down, revenue never falls');
+  const spec = calculatePriceIncrease({ ...PI, newPrice: 110, monthlyAppointments: 66 });
+  assert.equal(spec.clientsYouCanLoseWhole, 6, 'spec example: approximately 6 clients');
+});
+
+test('price increase: a price cut needs more clients; bad inputs are named errors', () => {
+  const r = calculatePriceIncrease({ ...PI, newPrice: 80 });
+  assert.equal(r.status, 'decrease'); assert.equal(r.clientsYouCanLoseWhole, 0); assert.equal(r.clientsToGainWhole, 15);
+  assert.match(calculatePriceIncrease({ ...PI, newPrice: 0 }).errors.newPrice, /greater than \$0/);
+  assert.match(calculatePriceIncrease({ ...PI, monthlyAppointments: 0 }).errors.monthlyAppointments, /greater than 0/);
+  assert.match(calculatePriceIncrease({ ...PI, expectedLossRate: 1 }).errors.expectedLossRate, /below 100%/);
+  assert.match(calculatePriceIncrease({ ...PI, durationMinutes: 0 }).errors.durationMinutes, /greater than 0 minutes/);
+});
+
+// ---------- service menu profitability (spec §17) ----------
+const MENU = [
+  { name: 'Facial', price: 120, durationMinutes: 60, productCost: 10, supplyCost: 2, laborHourly: 30 },
+  { name: 'Peel', price: 170, durationMinutes: 90, productCost: 20, supplyCost: 5, laborHourly: 30 },
+  { name: 'Lash fill', price: 70, durationMinutes: 60, productCost: 8, supplyCost: 2, laborHourly: 30 },
+];
+
+test('menu: each service carries rent by its own length and labor; profit, margin and per-hour figures', () => {
+  const r = calculateMenuProfitability({ services: MENU, monthlyRent: 1600, hoursPerMonth: 160 });
+  assert.equal(r.ok, true);
+  const [facial, peel, lash] = r.services;
+  near(facial.rentShare, 10); near(peel.rentShare, 15, 'a 90-minute service carries 1.5× the rent');
+  near(facial.labor, 30); near(peel.labor, 45);
+  near(facial.profit, 120 - 12 - 10 - 30); near(peel.profit, 170 - 25 - 15 - 45); near(lash.profit, 70 - 10 - 10 - 30);
+  near(peel.profitPerHour, 85 / 1.5); near(facial.margin, 68 / 120); near(peel.revenuePerHour, 170 / 1.5);
+});
+
+test('menu: rankings — most profit per appointment, per hour, highest margin, lowest performer', () => {
+  const r = calculateMenuProfitability({ services: MENU, monthlyRent: 1600, hoursPerMonth: 160 });
+  assert.equal(r.rankings.profit.index, 1, 'Peel: $85');
+  assert.equal(r.rankings.profitPerHour.index, 0, 'Facial: $68/hour beats Peel’s $56.67');
+  assert.equal(r.rankings.margin.index, 0);
+  assert.equal(r.rankings.lowest.index, 2, 'Lash fill: $20/hour');
+  assert.deepEqual(r.order, [0, 1, 2]);
+  assert.equal(r.similar, false);
+  assert.deepEqual(r.lossIndexes, []);
+  const loss = calculateMenuProfitability({ services: [MENU[0], { ...MENU[2], price: 40 }], monthlyRent: 1600, hoursPerMonth: 160 });
+  assert.deepEqual(loss.lossIndexes, [1]);
+  assert.equal(loss.rankings.lowest.index, 1);
+});
+
+test('menu: ties and near-ties are reported; a single service has no rankings', () => {
+  const tie = calculateMenuProfitability({ services: [MENU[0], { ...MENU[0], name: 'Facial B' }, MENU[2]], monthlyRent: 1600, hoursPerMonth: 160 });
+  assert.equal(tie.rankings.profitPerHour.index, 0);
+  assert.deepEqual(tie.rankings.profitPerHour.tiedWith, [1]);
+  const close = calculateMenuProfitability({ services: [{ ...MENU[0], price: 100 }, { ...MENU[0], price: 102 }, { ...MENU[0], price: 104 }], monthlyRent: 1600, hoursPerMonth: 160 });
+  assert.equal(close.similar, true, '$48, $50, $52 an hour: within 10%');
+  const one = calculateMenuProfitability({ services: [MENU[0]], monthlyRent: 0, hoursPerMonth: 160 });
+  assert.equal(one.comparing, false); assert.equal(one.rankings, null);
+});
+
+test('menu: owner labor per row (wage × time + commission × price); errors are keyed to the row', () => {
+  const r = calculateMenuProfitability({ services: [{ ...MENU[0], laborHourly: 20, commissionRate: 0.4 }], monthlyRent: 0, hoursPerMonth: 160, processingRate: 0.03 });
+  near(r.services[0].labor, 20 + 48);
+  near(r.services[0].profit, 120 - 12 - 68 - 3.6);
+  const bad = calculateMenuProfitability({ services: [MENU[0], { ...MENU[1], price: 0, durationMinutes: 0 }, { ...MENU[2], commissionRate: 1 }], hoursPerMonth: 160 });
+  assert.equal(bad.ok, false);
+  assert.deepEqual(Object.keys(bad.errors).sort(), ['commissionRate-2', 'durationMinutes-1', 'price-1']);
+  assert.equal(calculateMenuProfitability({ services: [], hoursPerMonth: 160 }).errors._, 'Add at least one service with a price and duration.');
+  assert.match(calculateMenuProfitability({ services: MENU, hoursPerMonth: 0 }).errors.hoursPerMonth, /more than 0/);
+});
+
+test('no NaN, Infinity or undefined in any Sprint 2 result, including edge inputs', () => {
+  const results = [
+    calculateBusinessProfit(BIZ), calculateBusinessProfit({ ...BIZ, serviceRevenue: 1, productCosts: 0, monthlyRent: 0, fixedExpenses: 0, variableExpenses: 0, monthlyPay: 0 }),
+    calculateEmployeeTakeHome({ payType: 'commission', serviceRevenue: 1, commissionRate: 0.01 }),
+    calculateDiscount({ ...DISC, discountRate: 0.999 }), calculateDiscount({ regularPrice: 50, durationMinutes: 60, discountRate: 0.5 }),
+    calculateCapacity({ revenueGoal: 1, averageTicket: 1e7 }), calculatePriceIncrease({ ...PI, newPrice: 1e7 }),
+    calculateMenuProfitability({ services: MENU, monthlyRent: 0, hoursPerMonth: 744 }),
+  ];
+  for (const r of results) { assert.equal(r.ok, true); assert.equal(hasBadNumber(r), false, JSON.stringify(r).slice(0, 120)); }
 });
