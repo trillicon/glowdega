@@ -2,7 +2,7 @@
 
 usage: python3 -I tools/build.py <export.xml> .
 """
-import csv, hashlib, html, json, os, re, sys, urllib.request, xml.etree.ElementTree as ET
+import csv, hashlib, html, json, os, re, sys, unicodedata, urllib.parse, urllib.request, xml.etree.ElementTree as ET
 from datetime import datetime
 from html.parser import HTMLParser
 
@@ -14,9 +14,9 @@ os.makedirs(IMG_DIR, exist_ok=True)
 
 # Search Console export (Performance → Pages → Export → CSV, the Pages.csv inside the zip). Orders the home page.
 POPULARITY = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'popularity.csv')
-# Every article has a banner placeholder in the right column. The slot between photo/meta and text is optional:
-AD_INLINE_DEFAULT = False   # True: on every article (and on posts published from /admin)
-AD_INLINE_SLUGS = set()     # or only on these archive slugs
+# Ads: every article carries two empty ad slots that functions/blog/[slug].js fills from the D1 `ads` table
+# (see functions/_lib/ads.js): a 300x600 rail beside the text and a 728x90 banner between photo/meta and text.
+# The <article> lists the page's targeting terms (category + tag slugs) in data-ad-terms.
 
 items = ET.parse(XML).getroot().find('channel').findall('item')
 by_id = {i.findtext('wp:post_id', namespaces=NS): i for i in items}
@@ -206,14 +206,39 @@ def text_of(h):
 def esc(s):
     return html.escape(s, quote=True)
 
+def term_slug(s):
+    """WordPress nicename (or a display name) -> the slug used for ad targeting, e.g. "Skin Care" -> "skin-care"."""
+    s = urllib.parse.unquote(s or '').lower()
+    s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
+    return re.sub(r'[^a-z0-9]+', '-', s.replace('&', ' and ')).strip('-')[:80].rstrip('-')
+
+def terms_of(item, domain):
+    """[(slug, display name)] of an item's categories or tags, in export order, without duplicates."""
+    out = []
+    for c in item.findall('category'):
+        if c.get('domain') != domain or not c.text: continue
+        name = html.unescape(c.text.strip())
+        slug = term_slug(c.get('nicename') or name)
+        if slug and slug not in [s for s, _ in out]: out.append((slug, name))
+    return out
+
+def ad_terms(p):
+    """Space-separated targeting terms of an archive post: its category slugs, then its tag slugs."""
+    terms = []
+    for slug, _ in p['cat_terms'] + p['tag_terms']:
+        if slug not in terms: terms.append(slug)
+    return ' '.join(terms)
+
 # ---------- collect posts ----------
 posts = []
 for it in raw_posts:
     slug = it.findtext('wp:post_name', namespaces=NS)
     title = html.unescape(it.findtext('title') or slug).strip()
     date = datetime.strptime(it.findtext('wp:post_date', namespaces=NS), '%Y-%m-%d %H:%M:%S')
-    cats = [html.unescape(c.text.strip()) for c in it.findall('category') if c.get('domain') == 'category' and c.text]
-    tags = [html.unescape(c.text.strip()) for c in it.findall('category') if c.get('domain') == 'post_tag' and c.text]
+    cat_terms = terms_of(it, 'category')
+    tag_terms = terms_of(it, 'post_tag')
+    cats = [name for _, name in cat_terms]
+    tags = [name for _, name in tag_terms]
     print('·', slug)
     body, imgs = clean(it.findtext('content:encoded', namespaces=NS) or '')
     hero = None
@@ -225,7 +250,8 @@ for it in raw_posts:
     if hero in imgs: hero = None  # already shown in the body
     text = text_of(body)
     excerpt = text if len(text) <= 220 else text[:220].rsplit(' ', 1)[0].rstrip(',.;:—-') + '…'
-    posts.append(dict(slug=slug, title=title, date=date, cats=cats, tags=tags, body=body, hero=hero,
+    posts.append(dict(slug=slug, title=title, date=date, cats=cats, tags=tags, cat_terms=cat_terms, tag_terms=tag_terms,
+                      body=body, hero=hero,
                       excerpt=excerpt, minutes=max(1, round(len(text.split()) / 225))))
 
 posts.sort(key=lambda p: p['date'], reverse=True)
@@ -280,13 +306,14 @@ def article_ld(title, desc, date_iso):
 def ld_json(data):
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
 
-AD_RAIL = ('<aside class="ad-rail" aria-label="Advertisement"><div class="ad-slot ad-slot--rail">'
-           '<span>Advertisement</span><small>300 × 600</small></div></aside>')
-AD_INLINE = ('<div class="ad-slot ad-slot--inline" aria-label="Advertisement">'
-             '<span>Advertisement</span><small>728 × 90</small></div>')
+# The rail placeholder shows when no ad runs (functions/_lib/site.js has the same RAIL_PLACEHOLDER); the inline
+# marker stays hidden unless an ad fills it.
+RAIL_PLACEHOLDER = '<div class="ad-slot ad-slot--rail"><span>Advertisement</span><small>300 × 600</small></div>'
+AD_RAIL = '<aside class="ad-rail" aria-label="Advertisement" data-ad-slot="rail">' + RAIL_PLACEHOLDER + '</aside>'
+AD_INLINE = '<div class="ad-slot ad-slot--inline" data-ad-slot="inline" aria-label="Advertisement" hidden></div>'
 
 def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager, desc, root='../', jsonld=None,
-                 inline_ad=False):
+                 terms=''):
     """Article page. `cats`, `body` and `pager` (the related-post cards) are HTML; everything else is plain text."""
     hero = (f'<figure class="article-image"><img src="{hero_src}" alt="" fetchpriority="high"></figure>'
             if hero_src else '')
@@ -295,10 +322,10 @@ def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager
             + (f'<div class="side-label">Filed under</div><p>{cats}</p>' if cats else '')
             + f'<div class="side-label">Reading time</div><p>{minutes} min</p>'
             + f'<a href="{root}blog.html">← All articles</a><a href="{root}book.html">The Book →</a></div>')
-    main = (f'<article><div class="article-hero"><div class="eyebrow"><a href="{root}blog.html">GLOWDEGA® / THE GLOW GAZETTE</a></div>'
+    main = (f'<article data-ad-terms="{esc(terms)}"><div class="article-hero"><div class="eyebrow"><a href="{root}blog.html">GLOWDEGA® / THE GLOW GAZETTE</a></div>'
             f'<h1>{esc(title)}</h1></div>'
             f'<div class="article-top">{hero}{info}</div><hr class="article-rule">'
-            + (AD_INLINE if inline_ad else '')
+            + AD_INLINE
             + f'<div class="article-layout"><div class="prose">{body}</div>{AD_RAIL}</div></article>'
             f'<section class="grid"><div class="grid-head"><span>Keep reading</span><a href="{root}blog.html">All articles →</a></div>'
             f'<div class="post-grid post-grid--four">{pager}</div></section>')
@@ -321,17 +348,20 @@ for p in posts:
     open(os.path.join(art_dir, p['slug'] + '.html'), 'w').write(article_page(
         p['title'], f"{p['date']:%Y-%m-%d}", fdate(p['date']), ' • '.join(esc(c) for c in p['cats']), p['minutes'],
         root + p['hero'] if p['hero'] else None, p['body'].replace('{root}', root), pager, p['excerpt'],
-        inline_ad=AD_INLINE_DEFAULT or p['slug'] in AD_INLINE_SLUGS))
+        terms=ad_terms(p)))
 
 # ---------- data + template for posts published from the admin (functions/) ----------
 os.makedirs(os.path.join(SITE, 'assets', 'templates'), exist_ok=True)
 json.dump([dict(slug=p['slug'], title=p['title'], date=f"{p['date']:%Y-%m-%dT%H:%M:%S}",
-                category=(p['cats'] or [''])[0], excerpt=p['excerpt']) for p in posts],
+                category=(p['cats'] or [''])[0], excerpt=p['excerpt'],
+                categories=[dict(slug=s, name=n) for s, n in p['cat_terms']],
+                tags=[dict(slug=s, name=n) for s, n in p['tag_terms']]) for p in posts],
           open(os.path.join(SITE, 'assets', 'posts.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 open(os.path.join(SITE, 'assets', 'templates', 'article.html'), 'w').write(article_page(
     '%%TITLE%%', '%%DATE_ISO%%', '%%DATE%%', '%%CATS%%', '%%MINUTES%%', '%%HERO%%', '%%BODY%%', '%%PAGER%%', '%%DESC%%',
-    jsonld='%%JSONLD%%', inline_ad=AD_INLINE_DEFAULT)
+    jsonld='%%JSONLD%%', terms='%%AD_TERMS%%')
     .replace('<figure class="article-image"><img src="%%HERO%%" alt="" fetchpriority="high"></figure>', '%%HERO_FIGURE%%')
+    .replace(RAIL_PLACEHOLDER, '%%AD_RAIL%%').replace(AD_INLINE, '%%AD_INLINE%%')
     .replace('<div class="side-label">Filed under</div><p>%%CATS%%</p>', '%%SIDE_CATS%%'))
 
 # ---------- blog index (newest first, grouped by year) ----------

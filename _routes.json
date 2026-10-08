@@ -6,6 +6,7 @@
     "/blog/*",
     "/admin",
     "/admin/*",
+    "/go/*",
     "/api/*",
     "/tools/*",
     "/functions/*",

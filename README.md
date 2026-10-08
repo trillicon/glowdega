@@ -26,8 +26,7 @@ Function tests: `node --test tests/*.test.mjs`
 - **Home page order:** most-searched first, from `tools/popularity.csv`, the Search Console export
   (Performance → Pages → Export → CSV; use `Pages.csv` from the zip). The CSV is git-ignored (the repo is public);
   only the ranked slugs are published, in `assets/popular.json`, and later builds reuse that ranking when the CSV is absent.
-- **Ads:** every article has a right-column banner placeholder. The slot between the photo/details and the text
-  is off by default: set `AD_INLINE_DEFAULT = True` (all posts) or list slugs in `AD_INLINE_SLUGS` in `tools/build.py`.
+- **Ads (`/admin/#ads`):** see [Ads](#ads) below.
 - **Fonts:** self-hosted in `assets/fonts` (Bricolage Grotesque for titles, Spectral Light for text; OFL).
 
 ## Publishing flow
@@ -53,6 +52,28 @@ Returns `201 {"id","slug","status":"draft","review_url"}`. `slug` is optional (d
 A `## FAQ` section with `### Question` headings becomes FAQPage structured data; every article also gets
 BlogPosting markup with Hadiyah as author.
 Markdown only: raw HTML in a draft is shown as text, and only `https:`, `mailto:` and site-relative links are kept.
+
+## Ads
+
+Manage them in `/admin/#ads`: upload the image (JPG, PNG, WebP or GIF, 10 MB max; stored in R2 under `ads/` and never
+overwritten), name it, give the https:// link, alt text and size, then pick where it runs:
+
+- **Sizes:** `rail` 300 × 600 in the right column of every article; `inline` 728 × 90 between the photo/details and the text.
+- **Targets:** tick categories and tags in the searchable list (post counts shown). An ad runs on articles that have any
+  of them. Archive articles carry their category and tag slugs in `<article data-ad-terms="…">` (written by
+  `tools/build.py`); posts published from the admin are targeted by their category.
+- **Default ad** runs on articles that no active ad targets. With several defaults (or several matching ads) one is
+  picked at random on each page view.
+- **Schedule:** optional start and end dates (the end date is the last day shown). Pause/Resume stops or restarts it at once.
+- **Choosing per slot:** active, in-date ads of that size matching the page → random one; else an active, in-date default
+  of that size → random one; else the rail shows the placeholder and the inline slot is left out.
+- **Stats:** every rendered ad counts a view; clicks go through `/go/ad/<id>`, which counts and redirects (unknown, paused
+  or ended ads redirect to the home page). Article pages are filled per request, so they are served `no-store`.
+
+Code: `functions/_lib/ads.js` (choosing, markup, validation), `functions/blog/[slug].js` (fills archive pages with
+HTMLRewriter, admin posts via `articlePage`), `functions/api/admin/ads/`, `functions/go/ad/[id].js`, `admin/ads.js`,
+table in `migrations/0003_ads.sql`. Tests: `tests/ads.test.mjs` (the HTMLRewriter test runs in the miniflare bundled
+with wrangler).
 
 ## Configuration (Cloudflare Pages → Settings)
 

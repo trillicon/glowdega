@@ -100,8 +100,22 @@ export function relatedPosts(post, posts) {
     .slice(0, RELATED).map((x) => x.p);
 }
 
+// ---------- ads (functions/_lib/ads.js chooses them; tools/build.py writes the same markers) ----------
+// Shown in the right column when no ad runs there. Must match RAIL_PLACEHOLDER in tools/build.py.
+export const RAIL_PLACEHOLDER = '<div class="ad-slot ad-slot--rail"><span>Advertisement</span><small>300 × 600</small></div>';
+
+// "Skin Care & Acne" -> "skin-care-and-acne": the same slugs tools/build.py makes from WordPress categories and tags.
+export const termSlug = (s) =>
+  String(s ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80).replace(/-+$/, '');
+
+// Ad targeting terms of a post published from the admin: its category.
+export const postTerms = (post) => [termSlug(post.category)].filter(Boolean);
+
 // ---------- article page from assets/templates/article.html ----------
-export function articlePage(template, post, related = []) {
+// `ads` = { rail, inline }: markup from ads.js railInner()/inlineSlot(); without them the rail shows the placeholder
+// and there is no inline slot.
+export function articlePage(template, post, related = [], ads = {}) {
   const html = renderMarkdown(post.body_md);
   const minutes = Math.max(1, Math.round(plainText(html).split(' ').length / 225));
   const cats = post.category ? esc(post.category) : '';
@@ -117,6 +131,9 @@ export function articlePage(template, post, related = []) {
     BODY: html,
     PAGER: related.map((p) => card(p)).join(''),
     JSONLD: jsonLd(post, isoDay(post.date)),
+    AD_TERMS: esc(postTerms(post).join(' ')),
+    AD_RAIL: ads.rail || RAIL_PLACEHOLDER,
+    AD_INLINE: ads.inline || '',
   };
   return template.replace(/%%([A-Z_]+)%%/g, (m, k) => (k in values ? values[k] : m));
 }

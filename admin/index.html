@@ -10,7 +10,7 @@
 <body>
 <header class="bar">
   <a class="logo" href="/admin/">GLOWDEGA® <span>ADMIN</span></a>
-  <nav class="views" aria-label="Admin sections"><a href="#" data-view="posts">Review queue</a><a href="#images" data-view="images">Photos</a></nav>
+  <nav class="views" aria-label="Admin sections"><a href="#" data-view="posts">Review queue</a><a href="#images" data-view="images">Photos</a><a href="#ads" data-view="ads">Ads</a></nav>
   <div class="who"><span id="who"></span><a href="/" target="_blank" rel="noopener">View site ↗</a><a href="/cdn-cgi/access/logout">Log out</a></div>
 </header>
 
@@ -84,6 +84,42 @@
   <p class="lib-count" id="libCount"></p>
   <p class="empty" id="libEmpty" hidden>No photos uploaded yet.</p>
   <ul class="grid" id="grid"></ul>
+</section>
+
+<section class="library ads" id="adsView" hidden aria-labelledby="adsTitle">
+  <div class="lib-head">
+    <h1 id="adsTitle">Ads</h1>
+    <p>Ads fill the two slots on every article: the 300 × 600 rail beside the text and the 728 × 90 banner above it. An ad shows on articles whose category or tags you pick; default ads fill everything else.</p>
+  </div>
+  <form id="adForm" class="ad-form" autocomplete="off" novalidate>
+    <div class="ad-form-head"><h2 id="adFormTitle">New ad</h2><button type="button" id="adCancel" class="ghost" hidden>Cancel edit</button></div>
+    <label class="drop ad-drop" id="adDrop">
+      <input type="file" name="image" accept="image/jpeg,image/png,image/webp,image/gif">
+      <img id="adImgPreview" alt="" hidden>
+      <span id="adImgText"></span>
+    </label>
+    <div class="ad-row">
+      <label>Name <small>Only you see this.</small><input name="name" required maxlength="120"></label>
+      <label>Size<select name="size"><option value="rail">Rail — 300 × 600, beside the text</option><option value="inline">Banner — 728 × 90, above the text</option></select></label>
+    </div>
+    <label>Link <small>https:// only. Opens in a new tab.</small><input name="link_url" type="url" required maxlength="2000" placeholder="https://"></label>
+    <label>Alt text <small>Describes the image for screen readers. Leave blank to use the name.</small><input name="alt" maxlength="300"></label>
+    <fieldset class="targets">
+      <legend>Show on articles filed under</legend>
+      <input type="search" id="termSearch" placeholder="Search categories and tags" aria-label="Search categories and tags">
+      <p class="picked" id="picked"></p>
+      <ul class="checklist" id="termList"></ul>
+    </fieldset>
+    <label class="check"><input type="checkbox" name="is_default"><span>Default ad (runs where nothing else targets)</span></label>
+    <div class="ad-row">
+      <label>Start date <small>Optional.</small><input type="date" name="starts"></label>
+      <label>End date <small>Optional. Last day it shows.</small><input type="date" name="ends"></label>
+    </div>
+    <div class="form-actions"><button type="submit" class="primary" id="adSave">Create ad</button></div>
+  </form>
+  <p class="lib-count" id="adCount"></p>
+  <p class="empty" id="adEmpty" hidden>No ads yet. Article pages show the placeholder until one runs.</p>
+  <ul class="ad-list" id="adList"></ul>
 </section>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

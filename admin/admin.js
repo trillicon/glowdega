@@ -1,5 +1,6 @@
 // Gazette review queue. Talks to /api/admin/* (Cloudflare Access protects both).
 import { initLibrary, showLibrary } from './images.js';
+import { initAds, showAds } from './ads.js';
 const $ = (s) => document.querySelector(s);
 const STATES = ['draft', 'scheduled', 'published', 'rejected'];
 const FIELDS = ['title', 'slug', 'category', 'excerpt', 'hero_image', 'body_md'];
@@ -103,17 +104,20 @@ async function loadList() {
   renderList();
 }
 
-// "#images" shows the photo library; any other hash is a post id.
+// "#images" shows the photo library, "#ads" the ads; any other hash is a post id.
 function showView(view) {
   $('.layout').hidden = view !== 'posts';
   $('#library').hidden = view !== 'images';
+  $('#adsView').hidden = view !== 'ads';
   for (const a of document.querySelectorAll('.views a')) a.setAttribute('aria-current', String(a.dataset.view === view));
   if (view === 'images') showLibrary();
+  if (view === 'ads') showAds();
 }
 
 async function open(id) {
-  showView(id === 'images' ? 'images' : 'posts');
-  if (id === 'images') return;
+  const view = id === 'images' || id === 'ads' ? id : 'posts';
+  showView(view);
+  if (view !== 'posts') return;
   if (!id) { current = null; renderEditor(); renderList(); return; }
   try {
     current = (await api('/posts/' + encodeURIComponent(id))).post;
@@ -220,6 +224,7 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
 });
 
 initLibrary({ toast, confirmStep });
+initAds({ toast, confirmStep });
 
 window.addEventListener('hashchange', () => {
   if (dirty && !confirm('You have unsaved changes. Leave this post?')) return;
