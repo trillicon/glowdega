@@ -67,6 +67,9 @@ export function calculateServicePricing({
     recommended: at(recommendedPrice),
     current: currentPrice > 0 ? at(currentPrice) : null,
     difference: currentPrice > 0 ? recommendedPrice - currentPrice : 0, // > 0 means underpriced
+    // the same gap measured from the price the page shows (rounded up to the dollar), so $117 vs $100 reads as $17, not $16.88
+    shownPrice: Math.ceil(recommendedPrice - CENT),
+    shownDifference: currentPrice > 0 ? Math.ceil(recommendedPrice - CENT) - currentPrice : 0,
     aboveRangeBy: currentPrice > range.high ? currentPrice - range.high : 0,
   });
 }

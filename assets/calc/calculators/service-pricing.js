@@ -34,11 +34,11 @@ mountCalculator({
       { label: `${owner ? 'Labor + profit' : 'Effective hourly earnings'} ${where}`, value: hourly.loss ? `Loss of ${money(hourly.amount)}/hour` : `${money(at.effectiveHourly)}/hour`, loss: hourly.loss },
     ];
     if (r.current) {
-      cards.push({ label: 'Difference from current price', value: money(Math.abs(r.difference), { cents: true }),
-        note: r.difference > 0.005 ? 'Below the recommended price' : r.difference < -0.005 ? 'Above the recommended price' : 'Matches the recommended price' });
+      cards.push({ label: 'Difference from current price', value: money(Math.abs(r.shownDifference)),
+        note: r.shownDifference > 0.005 ? 'Below the recommended price' : r.shownDifference < -0.005 ? 'Above the recommended price' : 'Matches the recommended price' });
     }
     const insight = {
-      under: `You're currently underpricing this service by approximately ${money(r.difference, { whole: r.difference >= 10 })}.`,
+      under: `You're currently underpricing this service by approximately ${money(r.shownDifference)}.`,
       within: 'Your current price is within your recommended range.',
       above: `Your current price is above your recommended range by ${money(r.aboveRangeBy)}. That works as long as clients keep booking.`,
       none: `Charge at least ${money(r.recommendedPrice, { up: true })} to cover your costs, pay ${timeWord} ${money(v.targetHourly)}/hour and keep a ${formatPercent(toRate(v.profitMargin))} profit margin.`,

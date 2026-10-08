@@ -258,3 +258,13 @@ test('display: money formats, loss labelling and rounding only at the edge', () 
   assert.equal(allocateOverhead(0, 0), 0);
   assert.equal(allocateOverhead(100, 0), null);
 });
+
+test('pricing: the difference card uses the shown (rounded-up) price, so $117 vs $100 reads $17', () => {
+  const r = calculateServicePricing({ currentPrice: 100, durationMinutes: 60, productCost: 10, targetHourly: 60, monthlyFixed: 2000, monthlyAppointments: 100, processingRate: 0.03, profitMargin: 0.2 });
+  assert.ok(r.recommendedPrice > 116.8 && r.recommendedPrice < 116.9);
+  assert.equal(r.shownPrice, 117);
+  assert.equal(r.shownDifference, 17);
+  assert.equal(formatMoney(r.recommendedPrice, { up: true }), formatMoney(r.shownPrice));
+  const above = calculateServicePricing({ currentPrice: 100, durationMinutes: 60, productCost: 10, targetHourly: 60 });
+  assert.equal(formatMoney(Math.abs(above.shownDifference)), '$30');
+});
