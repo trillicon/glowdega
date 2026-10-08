@@ -84,9 +84,12 @@ test('calculator pages: shared framework hooks (labels, numeric keyboards, live 
     assert.ok(src && existsSync(join(ROOT, src)), `${c}: module script missing`);
   }
   assert.match(read('resources/service-pricing/index.html'), /name="businessType" value="owner"/);
-  // service-cost now has rent, which employees never see, so it carries the selector with all three types
+  // service-cost is for the people who pay rent and labor: solo providers and owners only, never an employee option
   const cost = read('resources/service-cost/index.html');
-  for (const t of ['solo', 'employee', 'owner']) assert.match(cost, new RegExp(`name="businessType" value="${t}"`), `service-cost: ${t}`);
+  for (const t of ['solo', 'owner']) assert.match(cost, new RegExp(`name="businessType" value="${t}"`), `service-cost: ${t}`);
+  assert.doesNotMatch(cost, /value="employee"|>Employee</, 'service-cost must not offer an Employee option');
+  const card = one(read('resources/index.html'), /(<a class="hub-card" href="service-cost\/"[^>]*>)/);
+  assert.match(card, /data-audiences="solo owner"/, 'hub: Cost Per Service is not shown to employees');
 });
 
 const fieldOf = (html, name) => one(html, new RegExp(`(<div class="calc-field"[^>]*>(?:(?!<div class="calc-field").)*?name="${name}"[^>]*>)`, 's'));
@@ -217,7 +220,10 @@ test('calculator pages are not gated: worker-type selector plus a small professi
   for (const c of CALCS) {
     const html = read(`resources/${c}/index.html`);
     assert.doesNotMatch(html, /data-hub-gate/, `${c}: never gated`);
-    for (const t of ['solo', 'employee', 'owner']) assert.match(html, new RegExp(`name="businessType" value="${t}"`), `${c}: ${t}`);
+    // every calculator offers every worker type except Cost Per Service, which is for those who pay rent and labor
+    const types = c === 'service-cost' ? ['solo', 'owner'] : ['solo', 'employee', 'owner'];
+    for (const t of types) assert.match(html, new RegExp(`name="businessType" value="${t}"`), `${c}: ${t}`);
+    if (!types.includes('employee')) assert.doesNotMatch(html, /name="businessType" value="employee"/, `${c}: no employee option`);
     const sel = one(html, /(<select id="f-profession" name="profession">.*?<\/select>)/s);
     assert.ok(sel, `${c}: no profession selector`);
     assert.deepEqual(optionsOf(sel), LICENSES, c);

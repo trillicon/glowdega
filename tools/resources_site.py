@@ -28,7 +28,7 @@ CALCS = [
     dict(slug='hourly-rate', cat='Pricing', live=True, name='What Is Your Time Worth?', audiences='solo employee owner',
          desc='Work out what every client hour needs to bring in to reach the income you want.', cta='Find Your Hourly Rate',
          desc_employee='See what each client hour needs to earn you to reach your take-home goal.'),
-    dict(slug='service-cost', cat='Pricing', live=True, name='Cost Per Service Calculator', audiences='solo employee owner',
+    dict(slug='service-cost', cat='Pricing', live=True, name='Cost Per Service Calculator', audiences='solo owner',
          desc='Add up the products and supplies behind a facial, peel or lash fill, down to the gloves.', cta='Count Your Costs'),
     dict(slug='service-profitability', cat='Profitability', live=True, name='Service Profitability Calculator', audiences='solo owner',
          desc='See what a single service really earns, per appointment and per hour.', cta='Check a Service'),
@@ -177,8 +177,7 @@ PAGES = {
         intro=['A gel manicure looks cheap to deliver until you count everything that goes into it: base coat, color, top coat, cuticle oil, files, buffers and lint-free wipes. A chemical peel or a root touch-up tells the same story. Small costs add up, and they come out of every single appointment.',
                'This calculator is for anyone who performs services: estheticians, hairstylists, nail technicians, lash and brow artists, barbers and owners costing a menu. Add one line per item. Choose whether it is a product (enzyme mask, lash adhesive, color, developer), a supply (gloves, cotton, foils, applicators) or another consumable (laundry, single-use linens), then enter how much one service uses and what that amount costs. Solo providers and owners can add the service length, monthly rent and labor too: a 90-minute facial in a $2,000-a-month room worked 160 hours a month carries $18.75 of rent.',
                'You get the product cost, supply cost, rent share, labor and the true cost per service. Send them straight into the Service Pricing Calculator to find a price that covers them, plus profit.'],
-        types=['solo', 'employee', 'owner'], unsupported=[],
-        type_notes={'employee': 'Rent is paid by the business you work for, so only products and supplies are counted.'},
+        types=['solo', 'owner'], unsupported=[],
         basic=[F('durationMinutes', 'Service duration', 'minutes', 'a service duration', max=1440, placeholder='90',
                  hint=f'Including set-up and consultation, e.g. <span data-prof="signature-minutes">90</span> for a {SIG}. Needed to share rent and labor by time.', types=['solo', 'owner']),
                RENT(),
@@ -309,7 +308,7 @@ def calculator_main(slug, p, script):
         types = ('<fieldset class="calc-type"><legend>Who are you?</legend><div class="calc-type__options">'
                  + ''.join(f'<label><input type="radio" name="businessType" value="{t}"><span>{TYPE_NAMES[t]}</span></label>' for t in p['types'])
                  + '</div></fieldset>'
-                 + ''.join(f'<div class="calc-type-note" data-for-type="{t}" hidden><p>{n}</p></div>' for t, n in p['type_notes'].items()))
+                 + ''.join(f'<div class="calc-type-note" data-for-type="{t}" hidden><p>{n}</p></div>' for t, n in p.get('type_notes', {}).items()))
     # profession: wording only (example services in hints and results); pre-set from ?profession= or the hub choice
     types += ('<div class="calc-profession"><label for="f-profession">Your license</label><select id="f-profession" name="profession">'
               + ''.join(f'<option value="{k}"{" selected" if k == PROFESSIONS[0][0] else ""}>{esc(l)}</option>' for k, l in PROFESSIONS)

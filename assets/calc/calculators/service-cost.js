@@ -65,10 +65,10 @@ export const config = mountCalculator({
     });
   },
   compute({ values: v, type, profession }) {
-    const employee = type === 'employee'; // the business pays rent and labor: employees see products and supplies only
+    // solo providers and owners only: an employee's business pays the rent and labor, so there is no employee option here
     const owner = type === 'owner';
     // labor, each type in its own field: solo = monthly pay ÷ hours a month × duration; owner = wage × duration + commission
-    const r = employee ? calculateServiceCost({ items: v.items }) : calculateServiceCost({ items: v.items, monthlyRent: v.monthlyRent,
+    const r = calculateServiceCost({ items: v.items, monthlyRent: v.monthlyRent,
       hoursPerMonth: v.hoursPerMonth, durationMinutes: v.durationMinutes,
       monthlyPay: owner ? 0 : v.monthlyPay, providerWage: owner ? v.providerWage : 0,
       commissionRate: owner ? toRate(v.commissionRate) : 0, price: owner ? v.price : 0 });
@@ -91,7 +91,7 @@ export const config = mountCalculator({
       { label: 'Total product cost', value: money(r.productCost, { cents: true }) },
       { label: 'Total supply cost', value: money(r.supplyCost, { cents: true }), note: r.otherCost > 0 ? `Includes ${money(r.otherCost, { cents: true })} other consumables` : 'Supplies and other consumables' },
     ];
-    if (!employee) {
+    {
       cards.push({ label: 'Rent share', value: money(r.rentShare, { cents: true }),
         note: hasRent ? `${money(r.rentPerHour, { cents: true })}/hour × ${mins}` : 'No rent entered' });
       const laborNote = owner
@@ -105,9 +105,7 @@ export const config = mountCalculator({
       'Each line: quantity used × unit cost. For a product you buy in bulk, unit cost is the price of one use (bottle price ÷ number of uses).',
       'Total product cost adds every “Product” line; total supply cost adds “Supplies” and “Other consumable” lines.',
     ];
-    if (employee) {
-      method.push('True cost = product cost + supply cost. Rent and labor are paid by the business you work for, so they are not added here.');
-    } else {
+    {
       method.push(hasRent
         ? `Rent share: ${money(v.monthlyRent)} rent ÷ ${formatNumber(v.hoursPerMonth)} hours worked a month = ${money(r.rentPerHour, { cents: true })}/hour, × ${mins} = ${money(r.rentShare, { cents: true })}.`
         : 'No rent was entered, so the rent share is $0.');
@@ -123,7 +121,7 @@ export const config = mountCalculator({
     // Pricing gets each part in its own field: products and supplies as product cost, rent with its hours and duration,
     // and labor as pay per hour (solo) or wage + commission (owner), so nothing is counted twice.
     const pricing = new URLSearchParams({ productCost: r.consumableCost.toFixed(2) });
-    if (!employee) {
+    {
       if (v.durationMinutes > 0) pricing.set('durationMinutes', String(v.durationMinutes));
       if (hasRent) { pricing.set('monthlyRent', String(v.monthlyRent)); pricing.set('hoursPerMonth', String(v.hoursPerMonth)); }
       if (owner) {
@@ -136,11 +134,11 @@ export const config = mountCalculator({
       pricing.set('type', type);
     }
     if (profession) pricing.set('profession', profession);
-    const parts = employee ? 'products and supplies' : [hasRent ? 'rent' : '', hasLabor ? 'labor' : ''].filter(Boolean).join(' and ');
+    const parts = [hasRent ? 'rent' : '', hasLabor ? 'labor' : ''].filter(Boolean).join(' and ');
     return {
       ok: true, raw: r,
       view: {
-        primary: { value: money(r.trueCost, { cents: true }), label: employee || (!hasRent && !hasLabor) ? 'True product and supply cost per service' : `True cost per service (products, supplies, ${parts})` },
+        primary: { value: money(r.trueCost, { cents: true }), label: !hasRent && !hasLabor ? 'True product and supply cost per service' : `True cost per service (products, supplies, ${parts})` },
         cards, insight, method,
         cta: { href: `../service-pricing/?${pricing}`, text: 'Use this cost in the Service Pricing Calculator →' },
         share: { value: money(r.trueCost, { cents: true }), label: hasRent || hasLabor ? `True cost of a ${service.phrase}, ${parts} included` : `True cost of products and supplies for a ${service.phrase}`, insight: 'Every service has a cost before it has a price.' },

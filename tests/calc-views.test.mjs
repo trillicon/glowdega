@@ -33,7 +33,7 @@ const V = {
 const CASES = [
   ['service-pricing', pricing, V.pricing, ['solo', 'owner']],
   ['hourly-rate', hourly, V.hourly, ['solo', 'employee', 'owner']],
-  ['service-cost', cost, V.cost, ['solo', 'employee', 'owner']],
+  ['service-cost', cost, V.cost, ['solo', 'owner']],
   ['service-profitability', profit, V.profit, ['solo', 'owner']],
   ['break-even', breakEven, V.breakEven, ['solo', 'owner']],
 ];
@@ -126,13 +126,14 @@ test('hourly rate labor: owner payroll × 12 is an expense; a solo provider’s 
   assert.ok(solo.view.method.some((m) => /your desired income is your pay/i.test(m) && /twice/.test(m)));
 });
 
-test('employees never get labor: cost per service ignores pay, wage and commission for employees', () => {
-  const r = cost.compute({ values: V.cost, type: 'employee', profession: 'esthetician' });
-  near(r.raw.labor, 0);
-  near(r.raw.rentShare, 0);
-  near(r.raw.trueCost, 11);
-  assert.ok(!r.view.cards.some((c) => /labor|pay/i.test(c.label)), 'no labor card for employees');
-  assert.equal(params(r.view).get('targetHourly'), null);
+test('cost per service has no employee mode: every result counts rent and labor once entered', () => {
+  for (const type of ['solo', 'owner']) {
+    const r = cost.compute({ values: V.cost, type, profession: 'esthetician' });
+    assert.ok(r.raw.rentShare > 0, `${type}: rent counted`);
+    assert.ok(r.raw.labor > 0, `${type}: labor counted`);
+    near(r.raw.trueCost, r.raw.consumableCost + r.raw.rentShare + r.raw.labor);
+    assert.ok(!r.view.method.some((m) => /business you work for/.test(m)), 'no employee wording left');
+  }
 });
 
 test('cost per service labor: its own card; solo pay goes to pricing as pay per hour, not into product cost', () => {
