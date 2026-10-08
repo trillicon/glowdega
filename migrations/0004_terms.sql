@@ -22,3 +22,4 @@ UPDATE posts SET category = 'Health & Wellness' WHERE lower(trim(category)) IN (
 UPDATE posts SET category = 'Hair Removal' WHERE lower(trim(category)) IN ('hair removal', 'sugaring', 'waxing');
 UPDATE posts SET category = 'Sun Care' WHERE lower(trim(category)) IN ('sun care', 'sunscreen');
 UPDATE posts SET category = 'Esthetician Life & Business' WHERE lower(trim(category)) IN ('business', 'esthetician life');
+UPDATE posts SET category = 'Skin Care Routines' WHERE lower(trim(category)) IN ('skin care', 'skincare', 'skin care routine', 'routines');
