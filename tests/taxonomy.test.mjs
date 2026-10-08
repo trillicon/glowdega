@@ -106,7 +106,7 @@ test('every archive post and every admin post opens with the affiliate note', ()
   for (const f of pages) assert.ok(read(`blog/${f}`).includes(note), f);
   const html = articlePage(read('assets/templates/article.html'), { title: 'T', body_md: 'First line.', date: NOW, category: 'Acne' });
   assert.ok(html.includes(`${note}<p>First line.</p>`));
-  assert.match(read('assets/style.css'), /\.prose \.affiliate-note\{font-style:italic;font-size:15px/);
+  assert.match(read('assets/style.css'), /\.prose \.affiliate-note\{font-style:italic;font-size:8pt/);
 });
 
 test('the article template uses root-absolute links, so /admin/preview/<id> is styled', async () => {

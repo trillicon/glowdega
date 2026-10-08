@@ -474,13 +474,16 @@ def popularity():
 
 ranked = popularity()
 rank = {s: i for i, s in enumerate(ranked)}
-by_popularity = sorted(posts, key=lambda p: rank.get(p['slug'], len(rank)))  # unranked keep newest-first order
+# Home: the 6 newest posts, then the 6 best-ranked of the rest (functions/_lib/posts.js homeCards() does the same).
+HOME_NEWEST, HOME_TRENDING = 6, 6
+newest_first = sorted(posts, key=lambda p: p['date'], reverse=True)
+home_posts = newest_first[:HOME_NEWEST] + sorted(newest_first[HOME_NEWEST:], key=lambda p: rank.get(p['slug'], len(rank)))[:HOME_TRENDING]
 json.dump(ranked, open(os.path.join(SITE, 'assets', 'popular.json'), 'w'))
 idx_path = os.path.join(SITE, 'index.html')
 idx = open(idx_path).read()
 start = idx.index('<div class="post-grid">')
 end = idx.index('<p style="margin-top:24px">', start)
-idx = idx[:start] + '<div class="post-grid">' + ''.join(card(p, dated=False) for p in by_popularity[:12]) + '</div>' + idx[end:]
+idx = idx[:start] + '<div class="post-grid">' + ''.join(card(p, dated=False) for p in home_posts) + '</div>' + idx[end:]
 idx = re.sub(r'(\d+)( published posts| POSTS)', lambda m: f'{len(posts)}{m.group(2)}', idx)
 open(idx_path, 'w').write(idx)
 

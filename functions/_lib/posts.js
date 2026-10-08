@@ -121,11 +121,15 @@ export async function homeRanking(env, request) {
   return { ranked: res.ok ? await res.json() : [], source: 'static' };
 }
 
-// Home cards: in `popular` order (see homeRanking), the rest newest first; no dates.
+// Home cards: the HOME_NEWEST most recent posts, then the top HOME_TRENDING of `popular` (see homeRanking) not already
+// shown, topped up newest first; no dates. `posts` is newest first. tools/build.py home_cards() does the same.
+export const HOME_NEWEST = 6, HOME_TRENDING = 6;
 export function homeCards(posts, popular = []) {
   const rank = new Map(popular.map((slug, i) => [slug, i]));
   const r = (p) => rank.get(p.slug) ?? rank.size;
-  return [...posts].sort((a, b) => r(a) - r(b)).slice(0, 12).map((p) => card(p, { dated: false })).join('');
+  const newest = posts.slice(0, HOME_NEWEST);
+  const trending = posts.slice(HOME_NEWEST).sort((a, b) => r(a) - r(b)).slice(0, HOME_TRENDING);
+  return [...newest, ...trending].map((p) => card(p, { dated: false })).join('');
 }
 
 export async function notFound(env, request) {
