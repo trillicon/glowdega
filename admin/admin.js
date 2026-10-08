@@ -1,14 +1,18 @@
 // Gazette review queue. Talks to /api/admin/* (Cloudflare Access protects both).
 import { initLibrary, showLibrary } from './images.js';
 import { initAds, showAds } from './ads.js';
+import { loadTaxonomy, categoryOptions, tagInput, initTerms, showTerms, refreshTags } from './terms.js';
 const $ = (s) => document.querySelector(s);
 const STATES = ['draft', 'scheduled', 'published', 'rejected'];
 const FIELDS = ['title', 'slug', 'category', 'excerpt', 'hero_image', 'body_md'];
+const VIEWS = ['images', 'ads', 'categories'];
+const tagList = (v) => { try { const a = Array.isArray(v) ? v : JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
 
 let posts = [];
 let tab = 'draft';
 let current = null;   // full post being edited
 let dirty = false;
+let editorTags;       // tag chips in the editor (admin/terms.js)
 
 async function api(path, { method = 'GET', body } = {}) {
   const res = await fetch('/api/admin' + path, {
@@ -82,7 +86,9 @@ function renderEditor() {
     s === 'published' && `Live since ${fmt(current.publish_at)}`,
   ].filter(Boolean).join(' • ');
   const form = $('#form');
-  for (const f of FIELDS) form.elements[f].value = current[f] || '';
+  categoryOptions(form.elements.category, current.category || '');   // an old category stays selected until changed
+  for (const f of FIELDS) if (f !== 'category') form.elements[f].value = current[f] || '';
+  editorTags.set(tagList(current.tags));
   const note = $('#reviewNote');
   note.hidden = !(s === 'rejected' && current.review_note);
   note.textContent = current.review_note ? `Rejection note: ${current.review_note}` : '';
@@ -104,18 +110,21 @@ async function loadList() {
   renderList();
 }
 
-// "#images" shows the photo library, "#ads" the ads; any other hash is a post id.
+// "#images" shows the photo library, "#ads" the ads, "#categories" every post's category and tags; any other hash is
+// a post id.
 function showView(view) {
   $('.layout').hidden = view !== 'posts';
   $('#library').hidden = view !== 'images';
   $('#adsView').hidden = view !== 'ads';
+  $('#termsView').hidden = view !== 'categories';
   for (const a of document.querySelectorAll('.views a')) a.setAttribute('aria-current', String(a.dataset.view === view));
   if (view === 'images') showLibrary();
   if (view === 'ads') showAds();
+  if (view === 'categories') showTerms();
 }
 
 async function open(id) {
-  const view = id === 'images' || id === 'ads' ? id : 'posts';
+  const view = VIEWS.includes(id) ? id : 'posts';
   showView(view);
   if (view !== 'posts') return;
   if (!id) { current = null; renderEditor(); renderList(); return; }
@@ -132,7 +141,7 @@ async function open(id) {
 
 function formValues() {
   const form = $('#form');
-  return Object.fromEntries(FIELDS.map((f) => [f, form.elements[f].value]));
+  return { ...Object.fromEntries(FIELDS.map((f) => [f, form.elements[f].value])), tags: editorTags.get() };
 }
 
 async function save({ quiet = false } = {}) {
@@ -140,6 +149,7 @@ async function save({ quiet = false } = {}) {
   if (!form.reportValidity()) throw new Error('Fix the highlighted fields first.');
   current = (await api('/posts/' + current.id, { method: 'PUT', body: formValues() })).post;
   dirty = false;
+  refreshTags();
   if (!quiet) toast('Saved.');
 }
 
@@ -225,6 +235,8 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
 
 initLibrary({ toast, confirmStep });
 initAds({ toast, confirmStep });
+initTerms({ toast });
+editorTags = tagInput($('#tagBox'), { onChange: () => { dirty = true; } });
 
 window.addEventListener('hashchange', () => {
   if (dirty && !confirm('You have unsaved changes. Leave this post?')) return;
@@ -234,6 +246,8 @@ window.addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); 
 
 (async () => {
   // The photo library must still open if the post list fails to load.
+  try { await loadTaxonomy(); } catch (err) { toast(err.message, true); }
+  refreshTags();
   try { await loadList(); } catch (err) { toast(err.message, true); }
   try { await open(location.hash.slice(1)); } catch (err) { toast(err.message, true); }
 })();

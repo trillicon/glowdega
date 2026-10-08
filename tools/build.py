@@ -256,6 +256,29 @@ for it in raw_posts:
 
 posts.sort(key=lambda p: p['date'], reverse=True)
 
+# ---------- categories: one per post from assets/taxonomy.json; old WordPress categories become tags ----------
+TAXONOMY = json.load(open(os.path.join(SITE, 'assets', 'taxonomy.json')))
+CATEGORY_SLUG = {c['name']: c['slug'] for c in TAXONOMY}
+assert all(term_slug(c['name']) == c['slug'] for c in TAXONOMY), 'assets/taxonomy.json: a slug does not match its name'
+MAPPING = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'categories.json')))
+bad = [v for v in list(MAPPING['map'].values()) + list(MAPPING['posts'].values()) if v not in CATEGORY_SLUG]
+if bad: sys.exit(f'tools/categories.json: not in assets/taxonomy.json: {sorted(set(bad))}')
+unknown = set(MAPPING['posts']) - SLUGS
+if unknown: sys.exit(f'tools/categories.json: no such post: {sorted(unknown)}')
+missing = []
+for p in posts:
+    cat = MAPPING['posts'].get(p['slug']) or next((MAPPING['map'][c] for c in p['cats'] if c in MAPPING['map']), None)
+    if not cat:
+        missing.append(p['slug']); continue
+    tags = []
+    for slug, name in p['tag_terms'] + p['cat_terms']:
+        if slug != CATEGORY_SLUG[cat] and slug not in MAPPING['drop_tags'] and slug not in [s for s, _ in tags]:
+            tags.append((slug, name))
+    p['old_cats'] = p['cats']
+    p['cats'], p['cat_terms'] = [cat], [(CATEGORY_SLUG[cat], cat)]
+    p['tags'], p['tag_terms'] = [n for _, n in tags], tags
+if missing: sys.exit(f'no category for {len(missing)} posts (add them to tools/categories.json): {missing}')
+
 def fdate(d): return d.strftime('%b %-d, %Y')
 
 # ---------- shared chrome (matches existing site) ----------
@@ -280,7 +303,7 @@ def header(root):
 def footer(root):
     return (f'<footer><div>GLOWDEGA®<br>Oakland, California</div><div><a href="{root}blog.html">The Glow Gazette</a>'
             f'<a href="{root}book.html">The Book</a></div><div><a href="https://www.fairyglowmother.com/">Fairy Glow Mother</a>'
-            f'<a href="{root}privacy.html">Privacy</a></div></footer>')
+            f'<a href="{root}privacy.html">Privacy</a><a href="{root}affiliate-disclosure.html">Affiliate Disclosure</a></div></footer>')
 
 def card(p, root='', dated=True):
     meta = ' • '.join(([fdate(p['date'])] if dated else []) + [esc(c) for c in p['cats'][:1]])
@@ -308,27 +331,42 @@ def article_ld(title, desc, date_iso):
 def ld_json(data):
     return '<script type="application/ld+json">' + json.dumps(data, ensure_ascii=False).replace('</', '<\\/') + '</script>'
 
-# The rail placeholder shows when no ad runs (functions/_lib/site.js has the same RAIL_PLACEHOLDER); the inline
-# marker stays hidden unless an ad fills it.
-RAIL_PLACEHOLDER = '<div class="ad-slot ad-slot--rail"><span>Advertisement</span><small>300 × 600</small></div>'
-AD_RAIL = '<aside class="ad-rail" aria-label="Advertisement" data-ad-slot="rail">' + RAIL_PLACEHOLDER + '</aside>'
-AD_INLINE = '<div class="ad-slot ad-slot--inline" data-ad-slot="inline" aria-label="Advertisement" hidden></div>'
+# Both ad slots always show something: the house ads for the book ship in the page and functions/_lib/ads.js swaps in a
+# real ad (targeted, else a default) per request. functions/_lib/site.js has the same HOUSE_RAIL and HOUSE_INLINE.
+HOUSE_RAIL = ('<div class="ad-slot ad-slot--rail ad-slot--house"><a class="house-ad house-ad--rail" href="/book">'
+              '<span class="house-ad__label">Advertisement</span><span class="house-ad__main"><span class="house-ad__kicker">The book</span>'
+              '<strong class="house-ad__title">Under Your Skin</strong><span class="house-ad__by">by Hadiyah Daché</span></span>'
+              '<span class="house-ad__cta">Get the book →</span></a></div>')
+HOUSE_INLINE = ('<div class="ad-slot ad-slot--inline ad-slot--house" data-ad-slot="inline" aria-label="Advertisement">'
+                '<a class="house-ad house-ad--inline" href="/book"><span class="house-ad__label">Advertisement</span>'
+                '<strong class="house-ad__title">Under Your Skin</strong><span class="house-ad__by">the book by Hadiyah Daché</span>'
+                '<span class="house-ad__cta">Get the book →</span></a></div>')
+AD_RAIL = '<aside class="ad-rail" aria-label="Advertisement" data-ad-slot="rail">' + HOUSE_RAIL + '</aside>'
+AD_INLINE = HOUSE_INLINE
+# First line of every article's text (functions/_lib/site.js AFFILIATE_NOTE must match).
+AFFILIATE_NOTE = ('Friendly reminder: this post contains affiliate links, which help support the Glowdega Archive. '
+                  'If you buy through them, I may earn a commission at no extra cost to you.')
 
-def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager, desc, root='../', jsonld=None,
+def filed_under(category, tags):
+    """'Filed under' in the article details: the category, then the tags (functions/_lib/site.js filedUnder())."""
+    return (f'<div class="side-label">Filed under</div><p data-terms="category">{esc(category)}</p>'
+            f'<p class="article-tags" data-terms="tags">{" · ".join(esc(t) for t in tags)}</p>')
+
+def article_page(title, date_iso, date_txt, filed, minutes, hero_src, body, pager, desc, root='../', jsonld=None,
                  terms=''):
-    """Article page. `cats`, `body` and `pager` (the related-post cards) are HTML; everything else is plain text."""
+    """Article page. `filed` (see filed_under), `body` and `pager` (the related-post cards) are HTML; the rest is text."""
     hero = (f'<figure class="article-image"><img src="{hero_src}" alt="" fetchpriority="high"></figure>'
             if hero_src else '')
     info = (f'<div class="article-info"><div class="side-label">Written by</div><p>{AUTHOR}, {esc(AUTHOR_CREDENTIAL.lower())}</p>'
             f'<div class="side-label">Published</div><p><time datetime="{date_iso}">{date_txt}</time></p>'
-            + (f'<div class="side-label">Filed under</div><p>{cats}</p>' if cats else '')
+            + filed
             + f'<div class="side-label">Reading time</div><p>{minutes} min</p>'
             + f'<a href="{root}blog.html">← All articles</a><a href="{root}book.html">The Book →</a></div>')
     main = (f'<article data-ad-terms="{esc(terms)}"><div class="article-hero"><div class="eyebrow"><a href="{root}blog.html">GLOWDEGA® / THE GLOW GAZETTE</a></div>'
             f'<h1>{esc(title)}</h1></div>'
             f'<div class="article-top">{hero}{info}</div><hr class="article-rule">'
             + AD_INLINE
-            + f'<div class="article-layout"><div class="prose">{body}</div>{AD_RAIL}</div></article>'
+            + f'<div class="article-layout"><div class="prose"><p class="affiliate-note">{esc(AFFILIATE_NOTE)}</p>{body}</div>{AD_RAIL}</div></article>'
             f'<section class="grid"><div class="grid-head"><span>Keep reading</span><a href="{root}blog.html">All articles →</a></div>'
             f'<div class="post-grid post-grid--four">{pager}</div></section>')
     head = (f'<meta property="og:type" content="article"><meta property="article:published_time" content="{date_iso}">'
@@ -348,23 +386,22 @@ for p in posts:
     root = '../'
     pager = ''.join(card(q, root) for q in related(p))
     open(os.path.join(art_dir, p['slug'] + '.html'), 'w').write(article_page(
-        p['title'], f"{p['date']:%Y-%m-%d}", fdate(p['date']), ' • '.join(esc(c) for c in p['cats']), p['minutes'],
+        p['title'], f"{p['date']:%Y-%m-%d}", fdate(p['date']), filed_under(p['cats'][0], p['tags']), p['minutes'],
         root + p['hero'] if p['hero'] else None, p['body'].replace('{root}', root), pager, p['excerpt'],
         terms=ad_terms(p)))
 
 # ---------- data + template for posts published from the admin (functions/) ----------
 os.makedirs(os.path.join(SITE, 'assets', 'templates'), exist_ok=True)
 json.dump([dict(slug=p['slug'], title=p['title'], date=f"{p['date']:%Y-%m-%dT%H:%M:%S}",
-                category=(p['cats'] or [''])[0], excerpt=p['excerpt'],
+                category=p['cats'][0], excerpt=p['excerpt'],
                 categories=[dict(slug=s, name=n) for s, n in p['cat_terms']],
                 tags=[dict(slug=s, name=n) for s, n in p['tag_terms']]) for p in posts],
           open(os.path.join(SITE, 'assets', 'posts.json'), 'w'), ensure_ascii=False, separators=(',', ':'))
 open(os.path.join(SITE, 'assets', 'templates', 'article.html'), 'w').write(article_page(
-    '%%TITLE%%', '%%DATE_ISO%%', '%%DATE%%', '%%CATS%%', '%%MINUTES%%', '%%HERO%%', '%%BODY%%', '%%PAGER%%', '%%DESC%%',
-    jsonld='%%JSONLD%%', terms='%%AD_TERMS%%')
+    '%%TITLE%%', '%%DATE_ISO%%', '%%DATE%%', '%%SIDE_CATS%%', '%%MINUTES%%', '%%HERO%%', '%%BODY%%', '%%PAGER%%', '%%DESC%%',
+    root='/', jsonld='%%JSONLD%%', terms='%%AD_TERMS%%')
     .replace('<figure class="article-image"><img src="%%HERO%%" alt="" fetchpriority="high"></figure>', '%%HERO_FIGURE%%')
-    .replace(RAIL_PLACEHOLDER, '%%AD_RAIL%%').replace(AD_INLINE, '%%AD_INLINE%%')
-    .replace('<div class="side-label">Filed under</div><p>%%CATS%%</p>', '%%SIDE_CATS%%'))
+    .replace(HOUSE_RAIL, '%%AD_RAIL%%').replace(HOUSE_INLINE, '%%AD_INLINE%%'))
 
 # ---------- blog index (newest first, grouped by year) ----------
 years = sorted({p['date'].year for p in posts}, reverse=True)
@@ -392,6 +429,25 @@ open(os.path.join(SITE, 'esthetician-directory.html'), 'w').write(page('', 'Esth
     '<div class="page-copy"><p>A directory of licensed estheticians is on the way. Check back soon.</p></div>'
     '<p><a class="cta" href="/blog">Read The Glow Gazette →</a></p></section>',
     '<meta name="robots" content="noindex">'))
+
+# ---------- affiliate disclosure (linked from every footer) ----------
+open(os.path.join(SITE, 'affiliate-disclosure.html'), 'w').write(page('', 'Affiliate Disclosure — GLOWDEGA®',
+    'How the Glowdega Archive uses affiliate links, gifted products and partnerships.',
+    '<section class="page-shell"><div class="eyebrow">GLOWDEGA® / PAGE</div><h1>Affiliate Disclosure</h1><div class="page-copy">'
+    '<p>The Glowdega™ Archive is supported by affiliate links. If you click one and buy something, I may earn a small '
+    'commission at no extra cost to you. It helps keep this site running and the advice free.</p>'
+    '<p>I don\'t recommend products because they pay. I recommend them because I\'ve used them myself or with my clients '
+    'over the years. Not every link here earns me anything, either. If the best product for the job has no affiliate '
+    'program, I\'ll still send you to it.</p>'
+    '<p>A few things you should know:</p><ul>'
+    '<li>Brands sometimes send me products for free. When a review or mention involves a gifted product or a paid '
+    'partnership, I\'ll say so right there in the post.</li>'
+    '<li>Commissions and freebies never buy a positive review. If I didn\'t like it, you\'ll hear that too.</li>'
+    '<li>Nothing here replaces a visit with your dermatologist or doctor, especially for persistent acne, pigmentation '
+    'changes, or anything that\'s getting worse.</li></ul>'
+    '<p>Questions about a recommendation or a partnership? Email '
+    '<a href="mailto:book@fairyglowmother.com">book@fairyglowmother.com</a>.</p>'
+    '<p><em>Last updated: October 2026</em></p></div></section>'))
 
 # ---------- home: the 12 most-searched posts (Search Console clicks, then impressions), no dates ----------
 def popularity():

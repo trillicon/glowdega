@@ -68,3 +68,31 @@ header{grid-template-columns:1fr auto}.right{display:block}.book-pill{padding:8p
 .article-top{flex-direction:column;gap:24px}.article-top .article-image img{max-width:100%;max-height:none}.article-info{max-width:none}
 .article-layout{grid-template-columns:minmax(0,1fr)}.ad-rail{position:static;order:1}.ad-slot--rail{width:100%;max-width:300px;height:250px}.ad-slot--rail.ad-slot--filled{height:auto}
 .post-grid--four{grid-template-columns:minmax(0,1fr)}.article-rule{margin-top:32px}.ad-slot--inline{height:60px}.ad-slot--inline.ad-slot--filled{height:auto}}
+/* affiliate disclosure, first line of every article (tools/build.py AFFILIATE_NOTE) */
+.prose .affiliate-note{font-style:italic;font-size:15px;line-height:1.5;color:var(--muted);margin:0 0 2em}
+/* tags under "Filed under" */
+.article-tags{font-size:12px;line-height:1.5;color:var(--muted)}
+.article-tags:empty{display:none}
+/* house ads for the book: shown in each ad slot when no ad runs (tools/build.py HOUSE_RAIL / HOUSE_INLINE) */
+.ad-slot--house{border:1px solid var(--ink);background:var(--acid);color:var(--ink);text-transform:none;letter-spacing:normal;overflow:hidden}
+.house-ad{display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box;width:100%;height:100%;padding:24px;color:inherit;text-decoration:none}
+.house-ad__label{font-size:9px;letter-spacing:.14em;text-transform:uppercase;opacity:.65}
+.house-ad__main{display:flex;flex-direction:column;gap:14px}
+.house-ad__kicker{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.house-ad__title{font-family:var(--display);font-weight:500;font-size:68px;line-height:.9;letter-spacing:-.045em}
+.house-ad__by{font-family:var(--text);font-size:19px;line-height:1.3}
+.house-ad__cta{align-self:flex-start;border:1px solid var(--ink);background:var(--paper);padding:13px 16px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.house-ad:hover .house-ad__cta,.house-ad:focus-visible .house-ad__cta{background:var(--ink);color:var(--acid)}
+.house-ad--inline{flex-direction:row;align-items:center;justify-content:flex-start;gap:20px;padding:0 22px}
+.house-ad--inline .house-ad__label{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px}
+.house-ad--inline .house-ad__title{font-size:36px;white-space:nowrap}
+.house-ad--inline .house-ad__by{font-size:16px;flex:1;min-width:0}
+.house-ad--inline .house-ad__cta{align-self:center}
+@media(max-width:1100px){.house-ad--rail{padding:20px}.house-ad--rail .house-ad__title{font-size:50px}.house-ad--rail .house-ad__by{font-size:16px}}
+@media(max-width:800px){
+.house-ad--rail{padding:18px}.house-ad--rail .house-ad__main{gap:8px}.house-ad--rail .house-ad__title{font-size:40px}
+.house-ad--inline{gap:12px;padding:0 14px}.house-ad--inline .house-ad__label{display:none}
+.house-ad--inline .house-ad__title{font-size:24px}.house-ad--inline .house-ad__by{font-size:13px}
+.house-ad--inline .house-ad__cta{padding:8px 10px;font-size:10px}
+.prose .affiliate-note{font-size:14px}}
+@media(max-width:520px){.house-ad--inline .house-ad__by{display:none}.house-ad--inline{justify-content:space-between}}

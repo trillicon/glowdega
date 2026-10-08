@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { pickAd, cleanAdFields, checkAd, adsFor } from '../functions/_lib/ads.js';
-import { articlePage, RAIL_PLACEHOLDER, postTerms } from '../functions/_lib/site.js';
+import { articlePage, HOUSE_RAIL, HOUSE_INLINE, postTerms } from '../functions/_lib/site.js';
 import { onRequestGet as listAds, onRequestPost as createAd } from '../functions/api/admin/ads/index.js';
 import { onRequestPut as updateAd, onRequestDelete as deleteAd } from '../functions/api/admin/ads/[id].js';
 import { collectTerms } from '../functions/api/admin/ads/terms.js';
@@ -24,7 +24,7 @@ const NOW = '2026-10-07T12:00:00.000Z';
 // ---------- fakes ----------
 function fakeD1() {
   const db = new DatabaseSync(':memory:');
-  for (const m of ['0001_posts.sql', '0003_ads.sql']) db.exec(readFileSync(join(ROOT, 'migrations', m), 'utf8'));
+  for (const m of ['0001_posts.sql', '0003_ads.sql', '0004_terms.sql']) db.exec(readFileSync(join(ROOT, 'migrations', m), 'utf8'));
   const stmt = (sql, args = []) => ({
     bind: (...a) => stmt(sql, a),
     async first() { return db.prepare(sql).get(...args) ?? null; },
@@ -94,15 +94,46 @@ test('with no targeted match the default of that size runs', () => {
   assert.equal(pick(ads, []).id, 2, 'pages without terms still get the default');
 });
 
-test('with no match and no default nothing is chosen: rail keeps the placeholder, no inline slot', () => {
+const TPL = () => readFileSync(join(ROOT, 'assets/templates/article.html'), 'utf8');
+const slots = (html) => ({
+  rail: html.match(/<aside class="ad-rail" aria-label="Advertisement" data-ad-slot="rail">(.*?)<\/aside>/s)?.[1],
+  inline: html.match(/<hr class="article-rule">(<div class="ad-slot ad-slot--inline[^"]*" data-ad-slot="inline".*?<\/a><\/div>)<div class="article-layout">/s)?.[1],
+});
+
+test('with no match and no default nothing is chosen, and both slots show the book house ads', () => {
   const ads = [ad(1, { targets: '["health"]' }), ad(2, { size: 'inline', targets: '["health"]' })];
   assert.equal(pick(ads, ['acne']), null);
   assert.equal(pick(ads, ['acne'], 'inline'), null);
-  const tpl = readFileSync(join(ROOT, 'assets/templates/article.html'), 'utf8');
-  const html = articlePage(tpl, { title: 'T', body_md: 'Hi', date: NOW, category: 'Acne' }, [], adsFor({}, ads, ['acne'], { now: NOW }));
-  assert.ok(html.includes(`data-ad-slot="rail">${RAIL_PLACEHOLDER}</aside>`));
-  assert.ok(!html.includes('data-ad-slot="inline"'));
+  const html = articlePage(TPL(), { title: 'T', body_md: 'Hi', date: NOW, category: 'Acne' }, [], adsFor({}, ads, ['acne'], { now: NOW }));
+  assert.deepEqual(slots(html), { rail: HOUSE_RAIL, inline: HOUSE_INLINE });
   assert.ok(html.includes('<article data-ad-terms="acne">'));
+});
+
+test('no ads at all, or ads() not given: both slots still filled with the house ads linking to /book', () => {
+  for (const ads of [adsFor({}, [], ['acne'], { now: NOW }), undefined]) {
+    const html = articlePage(TPL(), { title: 'T', body_md: 'Hi', date: NOW, category: 'Acne' }, [], ads);
+    assert.deepEqual(slots(html), { rail: HOUSE_RAIL, inline: HOUSE_INLINE });
+  }
+  for (const h of [HOUSE_RAIL, HOUSE_INLINE]) {
+    assert.match(h, /<a class="house-ad house-ad--(rail|inline)" href="\/book">/);
+    assert.match(h, /Under Your Skin/);
+    assert.match(h, /Advertisement/);
+  }
+  assert.match(HOUSE_INLINE, /^<div class="ad-slot ad-slot--inline ad-slot--house" data-ad-slot="inline" aria-label="Advertisement">/);
+  assert.ok(!HOUSE_INLINE.includes('hidden'), 'the inline slot is never hidden');
+});
+
+test('only an inline default: the banner is the real ad, the rail is the house ad (and the reverse)', () => {
+  const env = { IMAGES_BASE: undefined };
+  let got = adsFor(env, [ad(1, { size: 'inline', is_default: 1 })], ['acne'], { now: NOW });
+  assert.equal(got.rail, HOUSE_RAIL);
+  assert.match(got.inline, /href="\/go\/ad\/1"/);
+  got = adsFor(env, [ad(2, { is_default: 1 })], ['acne'], { now: NOW });
+  assert.match(got.rail, /href="\/go\/ad\/2"/);
+  assert.equal(got.inline, HOUSE_INLINE);
+  const html = articlePage(TPL(), { title: 'T', body_md: 'Hi', date: NOW, category: 'Acne' }, [], got);
+  assert.equal(slots(html).inline, HOUSE_INLINE);
+  assert.match(slots(html).rail, /ad-slot--filled/);
 });
 
 test('paused ads and ads outside their dates never run, even as defaults', () => {
@@ -130,9 +161,11 @@ test('the random choice is only ever among eligible ads, and covers all of them'
   assert.deepEqual([...rotated].sort(), [7, 8], 'several defaults rotate');
 });
 
-test('live posts target their category slug', () => {
+test('live posts target their category slug, then their tag slugs', () => {
   assert.deepEqual(postTerms({ category: 'Skin Care & Acne' }), ['skin-care-and-acne']);
   assert.deepEqual(postTerms({ category: '' }), []);
+  assert.deepEqual(postTerms({ category: 'Acne', tags: '["Sleep","acne","Self Care"]' }), ['acne', 'sleep', 'self-care']);
+  assert.deepEqual(postTerms({ category: 'Acne', tags: [{ slug: 'glowin6', name: 'glowin6' }] }), ['acne', 'glowin6']);
 });
 
 // ---------- validation ----------
@@ -263,7 +296,7 @@ test('a live admin post shows the ad targeting its category, counts the view, an
   const html = await res.text();
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.ok(html.includes(`<a href="/go/ad/${target}" rel="sponsored noopener" target="_blank"><img src="https://images.glowdega.com/ads/acne.jpg" alt="Acne &lt;kit&gt;" width="300" height="600" loading="lazy"></a>`));
-  assert.ok(!html.includes('data-ad-slot="inline"'), 'no inline ad, no inline slot');
+  assert.equal(slots(html).inline, HOUSE_INLINE, 'no inline ad: the inline slot shows the house ad');
   await Promise.all(waits);
   assert.equal(row(env, target).views, 1);
 });
@@ -286,9 +319,9 @@ test('HTMLRewriter fills the slots of a real archive page by its terms', async (
   const lib = ['ads.js', 'db.js', 'images.js', 'posts.js', 'site.js', 'marked.esm.js'];
   const worker = `import { fillSlots } from './functions/_lib/ads.js';
     export default { async fetch(req) {
-      const { html, ads } = await req.json();
+      const { html, ads, terms } = await req.json();
       const views = [];
-      const out = await fillSlots(new Response(html), {}, ads, { onView: (a) => views.push(a.id), now: '${NOW}', random: () => 0 }).text();
+      const out = await fillSlots(new Response(html), {}, ads, { onView: (a) => views.push(a.id), now: '${NOW}', random: () => 0, terms }).text();
       return Response.json({ out, views });
     } };`;
   const mf = new mfLib.Miniflare(options({
@@ -298,7 +331,7 @@ test('HTMLRewriter fills the slots of a real archive page by its terms', async (
   }));
   try {
     const page = readFileSync(join(ROOT, 'blog/8-ways-actually-get-sleep.html'), 'utf8');   // terms: self-care … sleep …
-    const run = async (ads) => (await mf.dispatchFetch('http://x/', { method: 'POST', body: JSON.stringify({ html: page, ads }) })).json();
+    const run = async (ads, terms = null) => (await mf.dispatchFetch('http://x/', { method: 'POST', body: JSON.stringify({ html: page, ads, terms }) })).json();
 
     let { out, views } = await run([ad(1, { targets: '["sleep"]' }), ad(2, { is_default: 1 }), ad(3, { size: 'inline', targets: '["self-care"]', alt: 'Rest "kit"' }),
       ad(4, { targets: '["acne"]' })]);
@@ -308,10 +341,25 @@ test('HTMLRewriter fills the slots of a real archive page by its terms', async (
     assert.deepEqual(views.sort(), [1, 3]);
 
     ({ out, views } = await run([ad(4, { targets: '["acne"]' }), ad(5, { size: 'inline', targets: '["acne"]' })]));
-    assert.ok(out.includes(`data-ad-slot="rail">${RAIL_PLACEHOLDER}</aside>`), 'no match, no default: rail placeholder stays');
-    assert.ok(!out.includes('data-ad-slot="inline"'), 'and the inline slot is removed');
+    assert.deepEqual(slots(out), { rail: HOUSE_RAIL, inline: HOUSE_INLINE }, 'no match, no default: both house ads stay');
     assert.deepEqual(views, []);
-    assert.equal(out.replace(/<div class="ad-slot ad-slot--inline"[^>]*><\/div>/, ''), page.replace(/<div class="ad-slot ad-slot--inline"[^>]*><\/div>/, ''));
+    assert.equal(out, page, 'and the page is otherwise untouched');
+
+    ({ out, views } = await run([ad(6, { size: 'inline', is_default: 1 })]));
+    assert.equal(slots(out).rail, HOUSE_RAIL, 'only an inline default: the rail keeps the house ad');
+    assert.match(slots(out).inline, /href="\/go\/ad\/6"/);
+    assert.deepEqual(views, [6]);
+
+    // Re-filed by the admin (post_terms): "Filed under", tags and ad terms are rewritten in the same pass.
+    ({ out, views } = await run([ad(7, { targets: '["acne"]' }), ad(8, { targets: '["sleep"]', size: 'inline' })],
+      { category: 'Acne', tags: ['Night <routine>', 'acne'] }));
+    assert.ok(out.includes('<article data-ad-terms="acne night-routine">'), 'ad terms follow the new category and tags');
+    assert.ok(out.includes('<p data-terms="category">Acne</p><p class="article-tags" data-terms="tags">Night &lt;routine&gt; · acne</p>'));
+    assert.match(slots(out).rail, /href="\/go\/ad\/7"/, 'the ad for the new category runs');
+    assert.equal(slots(out).inline, HOUSE_INLINE, 'the old "sleep" tag no longer matches');
+    assert.deepEqual(views, [7]);
+    ({ out } = await run([], { category: 'Skin Care Routines', tags: [] }));
+    assert.ok(out.includes('<p data-terms="category">Skin Care Routines</p><p class="article-tags" data-terms="tags"></p>'), 'works with no ads running');
   } finally {
     await mf.dispose();
   }

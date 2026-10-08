@@ -1,5 +1,6 @@
 // D1 access for posts written in /admin or submitted through /api/drafts.
 import { archiveSlugs, nowIso } from './posts.js';
+import { termSlug } from './site.js';
 
 export const json = (data, status = 200) =>
   Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
@@ -52,8 +53,45 @@ export async function freeSlug(context, base) {
 
 const LIMITS = { title: 200, excerpt: 400, category: 60, hero_image: 1000, body_md: 200_000, source: 80, review_note: 2000 };
 
-// Pick and validate editable fields from a request body.
-export function cleanFields(input, { requireAll = false } = {}) {
+export const MAX_TAGS = 15;
+export const MAX_TAG_LENGTH = 40;
+
+// A category must be one of the approved names (assets/taxonomy.json). `keep` is the post's saved category: an old
+// one from before the list existed may be saved again unchanged, so those drafts stay editable.
+export function cleanCategory(value, categories, { keep = null } = {}) {
+  const v = String(value ?? '').trim();
+  if (!v || v === keep) return v;
+  const names = categories.map((c) => c.name);
+  const hit = names.find((n) => n.toLowerCase() === v.toLowerCase());
+  if (hit) return hit;
+  throw new HttpError(400, `"${v.slice(0, 60)}" is not a category. Use one of: ${names.join(', ')}.`);
+}
+
+// Tags: a list (or comma-separated text) of short names, de-duplicated by slug.
+export function cleanTags(value) {
+  let list = value;
+  if (typeof value === 'string') {
+    try { list = value.trim().startsWith('[') ? JSON.parse(value) : value.split(','); } catch { list = null; }
+  }
+  if (!Array.isArray(list)) throw new HttpError(400, 'Tags must be a list of words or short phrases.');
+  const out = [];
+  const seen = new Set();
+  for (const t of list) {
+    if (typeof t !== 'string') throw new HttpError(400, 'Tags must be a list of words or short phrases.');
+    const name = t.trim().replace(/\s+/g, ' ');
+    if (!name) continue;
+    if (name.length > MAX_TAG_LENGTH) throw new HttpError(400, `The tag "${name.slice(0, 40)}…" is too long (max ${MAX_TAG_LENGTH} characters).`);
+    const slug = termSlug(name);
+    if (!slug) throw new HttpError(400, `The tag "${name}" needs at least one letter or number.`);
+    if (!seen.has(slug)) { seen.add(slug); out.push(name); }
+  }
+  if (out.length > MAX_TAGS) throw new HttpError(400, `Use at most ${MAX_TAGS} tags.`);
+  return out;
+}
+
+// Pick and validate editable fields from a request body. `categories` = the taxonomy; `keepCategory` = the saved
+// category of the post being edited (see cleanCategory).
+export function cleanFields(input, { requireAll = false, categories, keepCategory = null } = {}) {
   const out = {};
   for (const [k, max] of Object.entries(LIMITS)) {
     if (input[k] === undefined || input[k] === null) continue;
@@ -65,6 +103,11 @@ export function cleanFields(input, { requireAll = false } = {}) {
     throw new HttpError(400, 'Hero image must be an https:// URL.');
   }
   if (requireAll && (!out.title || !out.body_md)) throw new HttpError(400, 'A title and a body are required.');
+  if (out.category !== undefined) {
+    if (!categories) throw new Error('cleanFields: pass the taxonomy to validate a category');
+    out.category = cleanCategory(out.category, categories, { keep: keepCategory });
+  }
+  if (input.tags !== undefined && input.tags !== null) out.tags = JSON.stringify(cleanTags(input.tags));
   if (input.slug !== undefined) out.slug = String(input.slug).trim().toLowerCase();
   return out;
 }

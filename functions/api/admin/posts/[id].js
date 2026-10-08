@@ -1,5 +1,6 @@
 // GET / PUT / DELETE /api/admin/posts/:id
 import { handle, json, readJson, cleanFields, checkSlug, getPost, requireDb, state, nowIso, HttpError } from '../../../_lib/db.js';
+import { taxonomy } from '../../../_lib/posts.js';
 
 export const onRequestGet = handle(async ({ env, params }) => {
   const post = await getPost(env, params.id);
@@ -10,7 +11,7 @@ export const onRequestGet = handle(async ({ env, params }) => {
 export const onRequestPut = handle(async (context) => {
   const { request, env, params } = context;
   const post = await getPost(env, params.id);
-  const fields = cleanFields(await readJson(request));
+  const fields = cleanFields(await readJson(request), { categories: await taxonomy(env, request), keepCategory: post.category });
   delete fields.review_note;
   if (fields.title === '') throw new HttpError(400, 'Title cannot be empty.');
   if (fields.body_md === '') throw new HttpError(400, 'Body cannot be empty.');

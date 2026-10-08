@@ -1,6 +1,7 @@
 // /blog/<slug>: archived posts are static files; anything else is looked up among posts approved in /admin.
-// Both get their ad slots filled per request (functions/_lib/ads.js), so article pages are not cached.
-import { asset, archiveSlugs, allPosts, notFound, htmlHeaders } from '../_lib/posts.js';
+// Both get their ad slots filled per request (functions/_lib/ads.js), so article pages are not cached. Archive pages
+// the admin re-filed (D1 post_terms) get their "Filed under" and ad terms rewritten in the same pass.
+import { asset, archiveSlugs, allPosts, termOverrides, notFound, htmlHeaders } from '../_lib/posts.js';
 import { articlePage, relatedPosts, postTerms } from '../_lib/site.js';
 import { runningAds, fillSlots, adsFor, countView } from '../_lib/ads.js';
 
@@ -13,9 +14,10 @@ export async function onRequestGet(context) {
   const onView = (ad) => context.waitUntil(countView(env, ad));
 
   if ((await archiveSlugs(env, request)).has(slug)) {
-    const [page, ads] = await Promise.all([asset(env, request, `/blog/${slug}`), runningAds(env)]);
+    const [page, ads, overrides] = await Promise.all([asset(env, request, `/blog/${slug}`), runningAds(env), termOverrides(env)]);
     if (!page.ok) return page;
-    const body = ads.length ? fillSlots(page, env, ads, { onView }).body : page.body;
+    const terms = overrides.get(slug) || null;
+    const body = ads.length || terms ? fillSlots(page, env, ads, { onView, terms }).body : page.body;
     return new Response(body, { headers: htmlHeaders(NO_STORE) });
   }
 

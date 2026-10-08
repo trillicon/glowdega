@@ -1,0 +1,15 @@
+[
+  {"slug": "acne", "name": "Acne"},
+  {"slug": "acne-scars", "name": "Acne Scars"},
+  {"slug": "hyperpigmentation", "name": "Hyperpigmentation"},
+  {"slug": "skin-conditions", "name": "Skin Conditions"},
+  {"slug": "sun-care", "name": "Sun Care"},
+  {"slug": "hair-and-scalp", "name": "Hair & Scalp"},
+  {"slug": "hair-removal", "name": "Hair Removal", "description": "Razor bumps, ingrown hairs, waxing, sugaring, shaving"},
+  {"slug": "skingredients", "name": "Skingredients"},
+  {"slug": "skin-care-routines", "name": "Skin Care Routines"},
+  {"slug": "facials-and-treatments", "name": "Facials & Treatments"},
+  {"slug": "health-and-wellness", "name": "Health & Wellness", "description": "Food, sleep, self care, health"},
+  {"slug": "skin-care-scams", "name": "Skin Care Scams"},
+  {"slug": "esthetician-life-and-business", "name": "Esthetician Life & Business"}
+]

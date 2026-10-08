@@ -69,7 +69,22 @@ function row(ad) {
   return li;
 }
 
+// Which default ad is live for each size; without one the slot shows the built-in book banner.
+export function liveDefaults(list) {
+  return Object.keys(SIZE_LABEL).map((size) => ({
+    size, names: list.filter((a) => a.size === size && a.is_default && a.state === 'running').map((a) => a.name),
+  }));
+}
+
+function renderDefaults() {
+  $('#adDefaults').replaceChildren(...liveDefaults(ads).map(({ size, names }) => el('div', {},
+    el('dt', { textContent: `Default ${SIZE_LABEL[size]}` }),
+    el('dd', names.length ? { textContent: names.join(', ') + (names.length > 1 ? ' (rotating)' : '') }
+      : { className: 'none', textContent: 'None — the book banner shows' }))));
+}
+
 function renderList() {
+  renderDefaults();
   $('#adList').replaceChildren(...ads.map(row));
   $('#adEmpty').hidden = ads.length > 0;
   const running = ads.filter((a) => a.state === 'running').length;

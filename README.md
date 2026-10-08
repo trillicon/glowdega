@@ -27,6 +27,14 @@ Function tests: `node --test tests/*.test.mjs`
   (Performance → Pages → Export → CSV; use `Pages.csv` from the zip). The CSV is git-ignored (the repo is public);
   only the ranked slugs are published, in `assets/popular.json`, and later builds reuse that ranking when the CSV is absent.
 - **Ads (`/admin/#ads`):** see [Ads](#ads) below.
+- **Categories (`/admin/#categories`):** the 13 approved categories live once in `assets/taxonomy.json` (read by
+  `tools/build.py`, the functions, the admin and the tests). Each archive post gets one, from `tools/categories.json`
+  (old WordPress category → new, plus per-post choices); the build fails if a post has none. Old WordPress categories
+  are kept as tags, so ads targeting them still match. The Categories tab lists every post with a category select and
+  tags; re-filing an archive post stores it in D1 `post_terms` and is applied when pages are served (cards, "Filed under",
+  ad terms). Posts written in /admin keep `category` and `tags` on their row (`migrations/0004_terms.sql`).
+- **Affiliate links:** every article opens with the affiliate note (`AFFILIATE_NOTE` in `tools/build.py` and
+  `functions/_lib/site.js`), and every footer links `affiliate-disclosure.html`.
 - **Fonts:** self-hosted in `assets/fonts` (Bricolage Grotesque for titles, Spectral Light for text; OFL).
 
 ## Publishing flow
@@ -45,8 +53,11 @@ Nothing reaches the public site without an approval in `/admin`.
 curl -X POST https://<site>/api/drafts \
   -H "Authorization: Bearer $DRAFTS_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"…","body_md":"Markdown body…","category":"Acne","excerpt":"optional","hero_image":"https://…","source":"claude"}'
+  -d '{"title":"…","body_md":"Markdown body…","category":"Acne","tags":["hormonal acne","diet"],"excerpt":"optional","hero_image":"https://…","source":"claude"}'
 ```
+
+`category` must be one of the names in `assets/taxonomy.json` (otherwise 400, listing them); `tags` is optional, up to 15
+short names. A post needs a listed category before it can be approved.
 
 Returns `201 {"id","slug","status":"draft","review_url"}`. `slug` is optional (derived from the title).
 A `## FAQ` section with `### Question` headings becomes FAQPage structured data; every article also gets
@@ -61,12 +72,14 @@ overwritten), name it, give the https:// link, alt text and size, then pick wher
 - **Sizes:** `rail` 300 × 600 in the right column of every article; `inline` 728 × 90 between the photo/details and the text.
 - **Targets:** tick categories and tags in the searchable list (post counts shown). An ad runs on articles that have any
   of them. Archive articles carry their category and tag slugs in `<article data-ad-terms="…">` (written by
-  `tools/build.py`); posts published from the admin are targeted by their category.
+  `tools/build.py`, rewritten when the post is re-filed); posts published from the admin by their category and tags.
 - **Default ad** runs on articles that no active ad targets. With several defaults (or several matching ads) one is
   picked at random on each page view.
 - **Schedule:** optional start and end dates (the end date is the last day shown). Pause/Resume stops or restarts it at once.
 - **Choosing per slot:** active, in-date ads of that size matching the page → random one; else an active, in-date default
-  of that size → random one; else the rail shows the placeholder and the inline slot is left out.
+  of that size → random one; else the built-in house ad for Hadiyah's book (`HOUSE_RAIL` / `HOUSE_INLINE`, linking to
+  /book). Both slots always show something; archive pages ship with the house ads, so they are right even without D1.
+  The top of the Ads tab says which default is live for each size.
 - **Stats:** every rendered ad counts a view; clicks go through `/go/ad/<id>`, which counts and redirects (unknown, paused
   or ended ads redirect to the home page). Article pages are filled per request, so they are served `no-store`.
 

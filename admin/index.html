@@ -10,7 +10,7 @@
 <body>
 <header class="bar">
   <a class="logo" href="/admin/">GLOWDEGA® <span>ADMIN</span></a>
-  <nav class="views" aria-label="Admin sections"><a href="#" data-view="posts">Review queue</a><a href="#images" data-view="images">Photos</a><a href="#ads" data-view="ads">Ads</a></nav>
+  <nav class="views" aria-label="Admin sections"><a href="#" data-view="posts">Review queue</a><a href="#images" data-view="images">Photos</a><a href="#ads" data-view="ads">Ads</a><a href="#categories" data-view="categories">Categories</a></nav>
   <div class="who"><span id="who"></span><a href="/" target="_blank" rel="noopener">View site ↗</a><a href="/cdn-cgi/access/logout">Log out</a></div>
 </header>
 
@@ -35,8 +35,10 @@
       <label>Title<input name="title" required maxlength="200"></label>
       <div class="row">
         <label>URL<span class="slug"><span>/blog/</span><input name="slug" required pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="80"></span></label>
-        <label>Category<input name="category" maxlength="60" placeholder="e.g. Acne"></label>
+        <label>Category<select name="category"></select></label>
       </div>
+      <div class="field" role="group" aria-labelledby="tagsLabel"><span id="tagsLabel">Tags <small>Words readers might search for. Enter or comma adds one; pick from tags already in use.</small></span>
+        <div id="tagBox"></div></div>
       <label>Excerpt <small>Shown on cards and in search results. Leave blank to use the opening lines.</small>
         <textarea name="excerpt" rows="2" maxlength="400"></textarea></label>
       <label>Featured image URL <small>https:// only. Optional.</small><input name="hero_image" type="url" maxlength="1000" placeholder="https://"></label>
@@ -89,8 +91,9 @@
 <section class="library ads" id="adsView" hidden aria-labelledby="adsTitle">
   <div class="lib-head">
     <h1 id="adsTitle">Ads</h1>
-    <p>Ads fill the two slots on every article: the 300 × 600 rail beside the text and the 728 × 90 banner above it. An ad shows on articles whose category or tags you pick; default ads fill everything else.</p>
+    <p>Ads fill the two slots on every article: the 300 × 600 rail beside the text and the 728 × 90 banner above it. An ad shows on articles whose category or tags you pick; default ads fill everything else, and where there is no default the book banner shows.</p>
   </div>
+  <dl class="ad-defaults" id="adDefaults" aria-live="polite"></dl>
   <form id="adForm" class="ad-form" autocomplete="off" novalidate>
     <div class="ad-form-head"><h2 id="adFormTitle">New ad</h2><button type="button" id="adCancel" class="ghost" hidden>Cancel edit</button></div>
     <label class="drop ad-drop" id="adDrop">
@@ -118,8 +121,23 @@
     <div class="form-actions"><button type="submit" class="primary" id="adSave">Create ad</button></div>
   </form>
   <p class="lib-count" id="adCount"></p>
-  <p class="empty" id="adEmpty" hidden>No ads yet. Article pages show the placeholder until one runs.</p>
+  <p class="empty" id="adEmpty" hidden>No ads yet. Article pages show the book banner until one runs.</p>
   <ul class="ad-list" id="adList"></ul>
+</section>
+
+<section class="library terms" id="termsView" hidden aria-labelledby="termsTitle">
+  <div class="lib-head">
+    <h1 id="termsTitle">Categories</h1>
+    <p>Every post, from the archive and from the admin, with its category and tags. Change them here and press Save on that row; archive posts update on the site right away. Ads target these categories and tags.</p>
+  </div>
+  <ul class="cat-counts" id="catCounts" aria-label="Posts per category"></ul>
+  <div class="term-tools">
+    <input type="search" id="termSearch2" placeholder="Search titles and tags" aria-label="Search posts">
+    <select id="termFilter" aria-label="Filter by category"></select>
+  </div>
+  <p class="lib-count" id="termShown"></p>
+  <p class="empty" id="termEmpty" hidden>No post matches.</p>
+  <ul class="term-rows" id="termRows"></ul>
 </section>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

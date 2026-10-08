@@ -3,9 +3,9 @@
 // Every article has two slots: 'rail' (300x600, right column) and 'inline' (728x90, between photo/meta and text).
 // For each slot: active ads of that size inside their date window whose targets share a term with the page (its
 // category and tag slugs) → one at random; otherwise an active in-window default ad of that size → one at random;
-// otherwise the rail keeps its placeholder and the inline slot is removed.
+// otherwise the slot keeps its house ad for the book (HOUSE_RAIL / HOUSE_INLINE in site.js), so both always show.
 import { HttpError, nowIso } from './db.js';
-import { esc } from './site.js';
+import { esc, HOUSE_RAIL, HOUSE_INLINE, filedUnder, termSlug } from './site.js';
 import { publicUrl, sniff, baseName, freeKey, tombstone, MAX_BYTES } from './images.js';
 
 export const SIZES = { rail: { width: 300, height: 600, label: '300 × 600' }, inline: { width: 728, height: 90, label: '728 × 90' } };
@@ -41,7 +41,7 @@ export function adLink(env, ad) {
 }
 // Content of <aside data-ad-slot="rail">.
 export const railInner = (env, ad) => `<div class="ad-slot ad-slot--rail ad-slot--filled">${adLink(env, ad)}</div>`;
-// Replaces the hidden <div data-ad-slot="inline"> marker.
+// Replaces the inline house ad <div data-ad-slot="inline">.
 export const inlineSlot = (env, ad) =>
   `<div class="ad-slot ad-slot--inline ad-slot--filled" data-ad-slot="inline" aria-label="Advertisement">${adLink(env, ad)}</div>`;
 
@@ -70,20 +70,33 @@ export function adsFor(env, ads, terms, { onView = () => {}, now, random } = {})
   const rail = pickAd(ads, terms, 'rail', { now, random });
   const inline = pickAd(ads, terms, 'inline', { now, random });
   for (const ad of [rail, inline]) if (ad) onView(ad);
-  return { rail: rail ? railInner(env, rail) : '', inline: inline ? inlineSlot(env, inline) : '' };
+  return { rail: rail ? railInner(env, rail) : HOUSE_RAIL, inline: inline ? inlineSlot(env, inline) : HOUSE_INLINE };
 }
 
-// Fill the slots of a static archive page (tools/build.py markup) while it streams.
-export function fillSlots(response, env, ads, { onView = () => {}, now, random } = {}) {
+// One streaming pass over a static archive page (tools/build.py markup): swap the house ads for real ones and, when
+// the admin re-filed the post (`terms` = { category, tags } from post_terms), rewrite "Filed under" and the
+// targeting terms first so the ads match the new category and tags.
+export function fillSlots(response, env, ads, { onView = () => {}, now, random, terms: override = null } = {}) {
   let terms = [];
-  return new HTMLRewriter()
+  const overrideTerms = override && [...new Set([termSlug(override.category), ...override.tags.map(termSlug)].filter(Boolean))];
+  let rw = new HTMLRewriter()
     .on('article[data-ad-terms]', {
-      element(e) { terms = (e.getAttribute('data-ad-terms') || '').split(/\s+/).filter(Boolean); },
-    })
+      element(e) {
+        if (overrideTerms) e.setAttribute('data-ad-terms', overrideTerms.join(' '));
+        terms = overrideTerms || (e.getAttribute('data-ad-terms') || '').split(/\s+/).filter(Boolean);
+      },
+    });
+  if (override) {
+    const [, cat, tags] = filedUnder(override.category, override.tags).match(/<p data-terms="category">(.*?)<\/p><p[^>]*>(.*?)<\/p>/);
+    rw = rw.on('[data-terms="category"]', { element(e) { e.setInnerContent(cat, { html: true }); } })
+      .on('[data-terms="tags"]', { element(e) { e.setInnerContent(tags, { html: true }); } });
+  }
+  if (!ads.length) return rw.transform(response);
+  return rw
     .on('[data-ad-slot="inline"]', {
       element(e) {
         const ad = pickAd(ads, terms, 'inline', { now, random });
-        if (!ad) { e.remove(); return; }
+        if (!ad) return;                                    // the house ad stays
         e.replace(inlineSlot(env, ad), { html: true });
         onView(ad);
       },

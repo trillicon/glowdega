@@ -1,6 +1,6 @@
 // Post data: the static archive (assets/posts.json, written by tools/build.py) merged with
 // posts approved in /admin (D1 binding `DB`). Without a DB binding the site serves the archive only.
-import { esc, card, year, excerptFrom } from './site.js';
+import { esc, card, year, excerptFrom, termSlug, tagNames } from './site.js';
 
 // Fetch a static file, following Pages' clean-URL redirects (/x.html -> /x).
 export async function asset(env, request, path) {
@@ -23,6 +23,42 @@ export async function archive(env, request) {
   return archiveCache;
 }
 
+// The approved categories, [{slug, name, description?}] from assets/taxonomy.json (also read by tools/build.py,
+// the admin and the tests).
+let taxonomyCache;
+export async function taxonomy(env, request) {
+  if (!taxonomyCache) {
+    const res = await asset(env, request, '/assets/taxonomy.json');
+    if (!res.ok) throw new Error(`taxonomy.json ${res.status}`);
+    taxonomyCache = await res.json();
+  }
+  return taxonomyCache;
+}
+
+// Category and tags the admin set for archive posts (D1 table post_terms): Map slug -> { category, tags: [name] }.
+export async function termOverrides(env) {
+  if (!env.DB) return new Map();
+  try {
+    const { results } = await env.DB.prepare('SELECT slug, category, tags FROM post_terms').all();
+    return new Map((results || []).map((r) => [r.slug, { category: r.category, tags: tagNames(r) }]));
+  } catch (err) {
+    if (!/no such table/i.test(String(err))) console.error('termOverrides failed', err);
+    return new Map();
+  }
+}
+
+// An archive entry with the admin's category and tags in place of the ones baked into posts.json.
+export const withTerms = (p, o) => (o ? {
+  ...p, category: o.category, categories: [{ slug: termSlug(o.category), name: o.category }],
+  tags: o.tags.map((name) => ({ slug: termSlug(name), name })), refiled: true,
+} : p);
+
+// The archive with admin overrides applied.
+export async function archiveWithTerms(env, request) {
+  const [arch, overrides] = await Promise.all([archive(env, request), termOverrides(env)]);
+  return overrides.size ? arch.map((p) => withTerms(p, overrides.get(p.slug))) : arch;
+}
+
 export async function archiveSlugs(env, request) {
   return new Set((await archive(env, request)).map((p) => p.slug));
 }
@@ -32,11 +68,13 @@ export const nowIso = () => new Date().toISOString();
 // Live = approved and due. Returned in the same shape as archive entries, plus body fields.
 export async function livePosts(env) {
   if (!env.DB) return [];
+  const query = (cols) => env.DB.prepare(
+    `SELECT slug, title, excerpt, category, ${cols}hero_image, body_md, publish_at AS date
+       FROM posts WHERE status = 'approved' AND publish_at <= ? ORDER BY publish_at DESC`,
+  ).bind(nowIso()).all();
   try {
-    const { results } = await env.DB.prepare(
-      `SELECT slug, title, excerpt, category, hero_image, body_md, publish_at AS date
-         FROM posts WHERE status = 'approved' AND publish_at <= ? ORDER BY publish_at DESC`,
-    ).bind(nowIso()).all();
+    // Before migrations/0004_terms.sql is applied there is no tags column: still serve the posts.
+    const { results } = await query('tags, ').catch((err) => (/no such column/i.test(String(err)) ? query('') : Promise.reject(err)));
     return results.map((p) => ({ ...p, excerpt: p.excerpt || excerptFrom(p.body_md), live: true }));
   } catch (err) {
     console.error('livePosts failed', err);
@@ -46,7 +84,7 @@ export async function livePosts(env) {
 
 const sortKey = (iso) => Date.parse(/[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : iso + 'Z');
 export async function allPosts(env, request) {
-  const [live, arch] = await Promise.all([livePosts(env), archive(env, request)]);
+  const [live, arch] = await Promise.all([livePosts(env), archiveWithTerms(env, request)]);
   return [...live, ...arch].sort((a, b) => sortKey(b.date) - sortKey(a.date));
 }
 

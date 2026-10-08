@@ -2,9 +2,10 @@
 // POST /api/admin/posts/:id/reject     { note? }
 // POST /api/admin/posts/:id/unpublish  — take a published or scheduled post back to draft
 import { handle, json, readJson, getPost, requireDb, state, nowIso, HttpError } from '../../../../_lib/db.js';
+import { taxonomy } from '../../../../_lib/posts.js';
 
 const ACTIONS = {
-  async approve(post, body) {
+  async approve(post, body, categories) {
     let when = nowIso();
     if (body.publish_at) {
       const t = Date.parse(body.publish_at);
@@ -13,6 +14,10 @@ const ACTIONS = {
       when = new Date(Math.max(t, Date.now())).toISOString();
     }
     if (!post.title || !post.body_md) throw new HttpError(400, 'A post needs a title and a body before it can be approved.');
+    if (!categories.some((c) => c.name === post.category)) {
+      throw new HttpError(400, post.category ? `“${post.category}” is an old category. Pick one from the list and save before publishing.`
+        : 'Pick a category and save before publishing.');
+    }
     return { status: 'approved', publish_at: when, review_note: '' };
   },
   async reject(post, body) {
@@ -30,7 +35,7 @@ export const onRequestPost = handle(async ({ request, env, params, data }) => {
   if (!action) throw new HttpError(404, 'Unknown action.');
   const post = await getPost(env, params.id);
   const body = request.headers.get('content-length') === '0' ? {} : await readJson(request).catch(() => ({}));
-  const changes = { ...(await action(post, body)), reviewed_by: data.adminEmail, reviewed_at: nowIso(), updated_at: nowIso() };
+  const changes = { ...(await action(post, body, await taxonomy(env, request))), reviewed_by: data.adminEmail, reviewed_at: nowIso(), updated_at: nowIso() };
 
   const keys = Object.keys(changes);
   await requireDb(env).prepare(`UPDATE posts SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`)
