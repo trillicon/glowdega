@@ -13,7 +13,7 @@ import { config as capacity } from '../assets/calc/calculators/capacity-clients.
 import { config as increase } from '../assets/calc/calculators/price-increase.js';
 import { config as discount } from '../assets/calc/calculators/discount-promotion.js';
 import { config as menu, recommendations } from '../assets/calc/calculators/menu-profitability.js';
-import { PROFESSIONS, serviceText, signatureService } from '../assets/calc/ui/professions.js';
+import { PROFESSIONS, serviceText, signatureService, sampleServices, sampleItems, itemPlaceholder, profText } from '../assets/calc/ui/professions.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg ?? ''} expected ${b}, got ${a}`);
 const textOf = (view) => JSON.stringify(view);
@@ -37,7 +37,9 @@ const V = {
   takeHome: { serviceRevenue: 12000, retailRevenue: 0, productCosts: 1000, monthlyRent: 2000, fixedExpenses: 500, variableExpenses: 500, monthlyPay: 5000,
     monthlyPayroll: 3000, commissionRate: 10, ownerPay: 4000, taxRate: 25, payType: 'mixed', revenueGenerated: 8000, payCommissionRate: 10, hourlyWage: 15,
     hoursWorked: 160, hoursOptional: 150, tips: 500, bonuses: 100 },
-  capacity: { revenueGoal: 8000, averageTicket: 100, workingDaysPerMonth: 20, serviceMinutes: 60, currentClients: 55, currentTicket: 105 },
+  capacity: { revenueGoal: 8000, averageTicket: 100, workingDaysPerMonth: 20, serviceMinutes: 60, currentClients: 55, currentTicket: 105,
+    incomeGoal: 4000, goalPeriod: 'month', payModel: 'sales', tierPeriod: 'week', tiers: [{ from: 0, rate: 40 }, { from: 2000, rate: 45 }],
+    flatRate: 40, baseWage: 0, tipPerClient: 10, nonClientHours: 4, hoursPerDay: 8 },
   increase: { currentPrice: 100, newPrice: 115, monthlyAppointments: 60, durationMinutes: 60, productCost: 10, monthlyRent: 1600, hoursPerMonth: 160,
     targetHourly: 30, providerWage: 20, commissionRate: 40, processingRate: 0, expectedLoss: 0 },
   discount: { regularPrice: 150, discountRate: 20, promoAppointments: 25, durationMinutes: 60, productCost: 15, monthlyRent: 2000, hoursPerMonth: 160,
@@ -75,23 +77,75 @@ test('profession changes wording only: every calculator gives identical numbers 
   }
 });
 
-test('profession wording: example services are each profession’s own, and always 60 or 90 minutes', () => {
-  for (const [p, { services }] of Object.entries(PROFESSIONS)) {
-    for (const m of Object.keys(services)) assert.ok(['60', '90'].includes(m), `${p}: ${m}-minute example`);
+// The owner's lists, exactly: every example service is 60 or 90 minutes, signature first.
+const LISTS = {
+  esthetician: [['Signature Facial', 60], ['Chemical Peel', 60], ['Hydrafacial', 60], ['Dermaplaning', 60], ['Brow Lamination', 60], ['Lash Lift', 60], ['Back Facial', 90]],
+  cosmetologist: [['Silk Press', 90], ['Curly Cut', 90], ['Root Touch-Up', 90], ['Blowout', 60], ['Trim & Style', 60], ['Gloss/Toner', 60]],
+  manicurist: [['Gel Manicure', 60], ['Acrylic Full Set', 90], ['Fill', 60], ['Spa Pedicure', 60], ['Gel-X Set', 90]],
+  barber: [['Fade', 60], ['Cut & Beard', 60], ['Lineup & Shape-Up', 60], ['Hot Towel Shave', 60], ['Kids’ Cut', 60], ['Cut, Beard & Hot Towel Shave', 90]],
+};
+// words that belong to an esthetician's menu or backbar and must never reach another license's results
+const ESTHETICIAN_TERMS = /facial|\bpeel|hydrafacial|dermaplan|\bbrow|\blash|enzyme|hyaluronic|esthetician/i;
+
+test('profession wording: example services are exactly each license’s list, signature first, and always 60 or 90 minutes', () => {
+  for (const [p, list] of Object.entries(LISTS)) {
+    assert.deepEqual(PROFESSIONS[p].services.map((s) => [s.name, s.minutes]), list, p);
+    for (const s of PROFESSIONS[p].services) assert.ok([60, 90].includes(s.minutes), `${p}: ${s.minutes}-minute example`);
+    assert.deepEqual(sampleServices(p, Infinity).map((s) => [s.name, s.minutes]), list, `${p}: sample menu rows`);
+    assert.equal(signatureService(p).minutes, list[0][1], `${p}: signature length`);
   }
-  assert.equal(signatureService('esthetician').text, '90-minute peel');
-  assert.equal(serviceText('esthetician', 60).phrase, '60-minute facial');
-  assert.equal(signatureService('cosmetologist').text, '90-minute color service');
+  assert.doesNotMatch(JSON.stringify(PROFESSIONS), /balayage/i);
+  assert.equal(signatureService('esthetician').text, '60-minute signature facial');
+  assert.equal(serviceText('esthetician', 90).phrase, '90-minute back facial');
+  assert.equal(signatureService('cosmetologist').text, '90-minute silk press');
+  assert.equal(serviceText('cosmetologist', 60).phrase, '60-minute blowout');
   assert.equal(signatureService('manicurist').text, '60-minute gel manicure');
-  assert.equal(signatureService('barber').text, '60-minute cut & beard');
-  assert.equal(signatureService('nonsense').text, '90-minute peel', 'unknown profession falls back to esthetician');
+  assert.equal(serviceText('manicurist', 90).phrase, '90-minute acrylic full set');
+  assert.equal(signatureService('barber').text, '60-minute fade');
+  assert.equal(serviceText('barber', 90).phrase, '90-minute cut, beard & hot towel shave');
+  assert.equal(serviceText('barber', 45).phrase, `${45}-minute service`, 'a length with no example names no service');
+  assert.equal(signatureService('nonsense').text, '60-minute signature facial', 'unknown profession falls back to esthetician');
   const insight = (profession, exampleServiceMinutes) => hourly.compute({ values: { ...V.hourly, exampleServiceMinutes }, type: 'solo', profession }).view.insight;
-  assert.match(insight('esthetician', 90), /^A 90-minute peel should generate/);
-  assert.match(insight('cosmetologist', 90), /^A 90-minute color service should generate/);
+  assert.match(insight('esthetician', 90), /^A 90-minute back facial should generate/);
+  assert.match(insight('cosmetologist', 90), /^A 90-minute silk press should generate/);
   assert.match(insight('manicurist', 60), /^A 60-minute gel manicure should generate/);
-  assert.match(insight('barber', 60), /^A 60-minute cut & beard should generate/);
-  assert.match(insight('barber', 90), /^A 90-minute service should generate/);
-  assert.match(pricing.compute({ values: V.pricing, type: 'solo', profession: 'cosmetologist' }).view.share.label, /90-minute color service/);
+  assert.match(insight('barber', 60), /^A 60-minute fade should generate/);
+  assert.match(insight('barber', 90), /^A 90-minute cut, beard & hot towel shave should generate/);
+  assert.match(pricing.compute({ values: V.pricing, type: 'solo', profession: 'cosmetologist' }).view.share.label, /90-minute silk press/);
+  // product and supply examples match the license: developer, toner and foils for hair; gel polish, tips and files for nails
+  assert.deepEqual(sampleItems('cosmetologist').map(([, n]) => n), ['Developer', 'Toner', 'Foils', 'Neck strips']);
+  assert.deepEqual(sampleItems('manicurist').map(([, n]) => n), ['Gel polish', 'Tips', 'Files', 'Lint-free wipes']);
+  assert.deepEqual(sampleItems('barber').map(([, n]) => n), ['Shave cream', 'Beard oil', 'Neck strips', 'Disposable clipper guards']);
+  assert.deepEqual(sampleItems('esthetician').map(([c]) => c), ['product', 'product', 'supply', 'other']);
+  for (const p of ['cosmetologist', 'manicurist', 'barber']) {
+    assert.doesNotMatch(JSON.stringify([sampleItems(p), itemPlaceholder(p), sampleServices(p, Infinity), profText('cost-card', p)]), ESTHETICIAN_TERMS, `${p}: sample rows`);
+  }
+});
+
+// Each calculator run the way its page runs for that license: sample rows (menu services, cost items) are the license's own.
+function asLicensed(name, values, profession) {
+  if (name === 'menu-profitability') return { ...values, services: values.services.map((s, i) => ({ ...s, name: sampleServices(profession, 3)[i].name })) };
+  if (name === 'service-cost') return { ...values, meta: values.meta.map((m, i) => ({ ...m, name: sampleItems(profession)[i * 2][1] })) };
+  return values;
+}
+
+test('no esthetician wording reaches a cosmetologist, manicurist or barber in any calculator view, and no other license’s services', () => {
+  const phrases = Object.fromEntries(Object.entries(PROFESSIONS).map(([p, x]) => [p, x.services.map((s) => s.phrase).filter((ph) => ph.length > 4)]));
+  for (const [name, calc, values, types] of CASES) {
+    for (const type of types) for (const profession of Object.keys(PROFESSIONS)) {
+      const r = calc.compute({ values: asLicensed(name, values, profession), type, profession });
+      assert.equal(r.ok, true, `${name} ${type} ${profession}`);
+      const t = textOf(r.view);
+      if (profession !== 'esthetician') assert.doesNotMatch(t, ESTHETICIAN_TERMS, `${name} ${type} ${profession}: ${t.match(new RegExp(`.{40}(${ESTHETICIAN_TERMS.source}).{20}`, 'i'))?.[0]}`);
+      for (const [other, list] of Object.entries(phrases)) {
+        if (other === profession) continue;
+        for (const ph of list) {
+          if (PROFESSIONS[profession].services.some((s) => s.phrase.includes(ph))) continue; // "cut & beard" sits inside a barber's 90-minute name
+          assert.ok(!t.toLowerCase().includes(ph.toLowerCase()), `${name} ${type} ${profession}: shows ${other}’s “${ph}”`);
+        }
+      }
+    }
+  }
 });
 
 // built from parts so this file passes its own copy scan (tests/calc-pages.test.mjs reads it)
@@ -322,11 +376,49 @@ test('capacity: primary is whole clients; scenario table built lazily from the e
   assert.match(r.view.insight, /about 80 clients a month, or 4 a day/);
   const ninety = capacity.compute({ values: { ...V.capacity, serviceMinutes: 90 }, type: 'solo', profession: 'esthetician' });
   assert.equal(card(ninety.view, 'Working hours with clients').value, '120 a month');
+  // employees plan from a pre-tax pay goal, not a revenue goal: their own view, with the tier reached and the next one
   const emp = capacity.compute({ values: V.capacity, type: 'employee', profession: 'cosmetologist' });
-  assert.equal(emp.view.primary.label, 'Clients a month to reach your service revenue goal');
+  assert.equal(emp.view.primary.label, 'Clients a week to reach your pay goal');
+  assert.doesNotMatch(textOf(emp.view), /revenue goal/, 'employees never see the owner’s revenue goal');
   assert.ok(emp.view.method.some((m) => /Profit & Take-Home/.test(m)));
+  assert.ok(emp.view.method.some((m) => /pays its rate on all sales|on all sales in that week/.test(m)), 'the all-sales tier rule is stated');
+  assert.match(emp.view.primary.note, /before tax/);
+  assert.match(emp.view.share.insight, /90-minute silk press|60-minute blowout/);
   assert.equal(capacity.compute({ values: { ...V.capacity, averageTicket: 0 }, type: 'solo', profession: 'esthetician' }).errors.averageTicket,
     'Enter an average service price greater than $0.');
+});
+
+test('capacity employee: whole clients a week, the tier reached, the next-tier cliff, hours and days; errors in words', () => {
+  const emp = (over = {}, profession = 'barber') => capacity.compute({ values: { ...V.capacity, ...over }, type: 'employee', profession });
+  // $4,000 a month = $923.08 a week. Tier 1 pays 40% + $10 tip = $50 a client: 19 clients ($950). The 20th reaches $2,000 → 45% on all.
+  const r = emp();
+  assert.equal(r.view.primary.value, '19');
+  assert.equal(card(r.view, 'Tier reached').value, 'Tier 1: 40%');
+  assert.equal(card(r.view, 'Sales needed').value, '$1,900 a week');
+  assert.equal(card(r.view, 'Clients a month').value, 'About 82');
+  assert.equal(card(r.view, 'Next tier').value, '45% at 20 clients');
+  assert.match(r.view.insight, /Just 1 more client a week \(20 in all\) reaches tier 2: 45% on all your sales, \$1,100 a week\. That is \$150 more/);
+  assert.match(r.view.insight, /stopping just short of it leaves money on the table/);
+  assert.equal(card(r.view, 'Hours a week').value, '23', '19 one-hour clients + 4 non-client hours');
+  assert.equal(card(r.view, 'Days a week').value, '2.9');
+  assert.equal(typeof r.view.extraNode, 'function', 'tier table');
+  const ninety = emp({ serviceMinutes: 90 });
+  assert.equal(card(ninety.view, 'Hours a week').value, '32.5', '19 × 1.5 hours + 4');
+  // flat commission + base wage, a weekly goal: $20/hour wage only, one-hour clients, no other hours → $800 a week is 40 clients
+  const wage = emp({ payModel: 'flat', flatRate: 0, baseWage: 20, tipPerClient: 0, nonClientHours: 0, incomeGoal: 800, goalPeriod: 'week' });
+  assert.equal(wage.view.primary.value, '40');
+  assert.equal(card(wage.view, 'Commission rate').value, '0%');
+  assert.equal(card(wage.view, 'Next tier'), undefined, 'flat commission has no tiers');
+  assert.equal(wage.view.extraNode, null);
+  // unreachable, invalid and NaN inputs: a message in words, never a number that can’t be calculated
+  assert.match(emp({ payModel: 'flat', flatRate: 0, baseWage: 0, tipPerClient: 0 }).errors._, /pays \$0 for every client/);
+  assert.match(emp({ incomeGoal: 1e7 }).errors._, /short of your goal/);
+  assert.deepEqual(Object.keys(emp({ tiers: [{ from: 0, rate: 40 }, { from: 0, rate: 45 }] }).errors), ['tierFrom-1']);
+  assert.deepEqual(Object.keys(emp({ tiers: [{ from: 0, rate: 40 }, { from: 2000, rate: 140 }] }).errors), ['tierRate-1']);
+  assert.ok(emp({ averageTicket: 0 }).errors.averageTicket);
+  assert.ok(emp({ incomeGoal: NaN }).errors.incomeGoal);
+  // solo and owners keep the revenue-goal view
+  assert.equal(capacity.compute({ values: V.capacity, type: 'owner', profession: 'barber' }).view.primary.label, 'Clients a month to reach your revenue goal');
 });
 
 test('price increase: the spec sentence, rent and labor in the cost, owner commission on the new price', () => {
@@ -350,7 +442,7 @@ test('price increase: the spec sentence, rent and labor in the cost, owner commi
 
 test('discount: statuses read correctly at 0%, normal, break-even and excessive discounts', () => {
   const at = (d, type = 'solo') => discount.compute({ values: { ...V.discount, discountRate: d }, type, profession: 'esthetician' });
-  assert.match(at(0).view.insight, /At full price this 60-minute facial earns \$78\.00/);
+  assert.match(at(0).view.insight, /At full price this 60-minute signature facial earns \$78\.00/);
   const normal = at(20);
   assert.equal(normal.view.primary.value, '$120.00');
   assert.equal(card(normal.view, 'Profit lost per appointment').value, '$29.10');

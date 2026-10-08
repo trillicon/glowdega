@@ -2,7 +2,7 @@
 // hidden until both are chosen, then only the matching ones show, linking with ?type=&profession= so each calculator
 // opens pre-set. The choice is remembered, so returning visitors skip the gate and get a "Change" control instead.
 // Progressive enhancement: the cards are always in the HTML, and with JavaScript off they all show and the gate does not.
-import { PROFESSIONS, PROFESSION_KEY, TYPE_KEY, TYPES, savedChoice, saveChoice } from './ui/professions.js';
+import { PROFESSIONS, PROFESSION_KEY, TYPE_KEY, TYPES, profText, savedChoice, saveChoice } from './ui/professions.js';
 
 const TYPE_NAMES = { solo: 'a Solo Provider', employee: 'an Employee', owner: 'a Business Owner' };
 export const isProfession = (p) => Object.hasOwn(PROFESSIONS, p || '');
@@ -41,7 +41,9 @@ if (hub) {
     for (const card of hub.querySelectorAll('.hub-card')) {
       card.hidden = !cardMatches(card.dataset.audiences, type);
       const desc = card.querySelector('.hub-card__desc');
-      desc.textContent = (type === 'employee' && card.dataset.descEmployee) || card.dataset.descDefault;
+      // a card whose examples name services (Cost Per Service) takes the chosen license's own: developer and foils for hair
+      desc.textContent = (type === 'employee' && card.dataset.descEmployee)
+        || (card.dataset.descProf ? profText(card.dataset.descProf, profession) : card.dataset.descDefault);
       if (card.dataset.href) card.setAttribute('href', cardHref(card.dataset.href, { type, profession, types: (card.dataset.types || '').split(' ') }));
     }
     for (const cat of hub.querySelectorAll('.hub-cat')) cat.hidden = !cat.querySelector('.hub-card:not([hidden])');

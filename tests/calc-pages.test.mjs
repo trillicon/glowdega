@@ -455,16 +455,76 @@ test('profit & take-home page: accounting model stated in the copy; employee mod
   assert.match(fieldOf(html, 'serviceRevenue'), /data-required/);
 });
 
-test('capacity page: 60- or 90-minute service length choice, 20 working days, employee wording', () => {
+test('capacity page: 60- or 90-minute length that follows the license, 20 working days; employees plan from a pay goal', () => {
   const html = read('resources/capacity-clients/index.html');
-  const len = one(html, /(<fieldset class="calc-type calc-choice"><legend>Average service length<\/legend>.*?<\/fieldset>)/s);
-  assert.ok(len, 'no service length choice for every type');
+  const len = one(html, /(<fieldset class="calc-type calc-choice" data-prof-default="signature-minutes"><legend>Average service length<\/legend>.*?<\/fieldset>)/s);
+  assert.ok(len, 'no service length choice for every type, defaulting from the license');
   assert.deepEqual([...len.matchAll(/name="serviceMinutes" value="(\d+)"/g)].map((m) => m[1]), ['60', '90']);
-  assert.match(len, /value="60" checked/);
+  assert.match(len, /value="60" checked/, 'the esthetician’s signature facial is 60 minutes');
   assert.match(fieldOf(html, 'workingDaysPerMonth'), /value="20"/);
   assert.match(fieldOf(html, 'averageTicket'), /data-min-message="Enter an average service price greater than \$0\."/);
-  assert.match(fieldOf(html, 'revenueGoal'), /data-label-employee="Monthly service revenue goal"/);
-  for (const n of ['currentClients', 'currentTicket']) assert.ok(html.indexOf(`name="${n}"`) > html.indexOf('class="calc-advanced"'), `${n} is optional, under Customize`);
+  for (const n of ['revenueGoal', 'workingDaysPerMonth', 'currentClients', 'currentTicket']) assert.equal(one(wrapperOf(html, n), /data-types="([^"]*)"/), 'solo owner', `${n}: solo and owners only`);
+  for (const n of ['incomeGoal', 'baseWage', 'tipPerClient', 'nonClientHours', 'hoursPerDay']) assert.equal(one(wrapperOf(html, n), /data-types="([^"]*)"/), 'employee', `${n}: employees only`);
+  assert.match(fieldOf(html, 'incomeGoal'), /<span class="calc-label">Your pay goal \(before tax\)<\/span>/);
+  assert.match(fieldOf(html, 'hoursPerDay'), /value="8"/);
+  assert.match(wrapperOf(html, 'flatRate'), /data-types="employee" data-when="payModel:flat"/);
+  const model = one(html, /(<fieldset class="calc-type calc-choice" data-types="employee"><legend>How is your commission paid\?<\/legend>.*?<\/fieldset>)/s);
+  assert.deepEqual([...model.matchAll(/value="(\w+)"[^>]*><span>([^<]+)/g)].map((m) => [m[1], m[2]]),
+    [['flat', 'Flat commission %'], ['sales', 'Tiered by sales'], ['services', 'Tiered by services per week']]);
+  assert.match(html, /<fieldset class="calc-type calc-choice" data-types="employee" data-when="payModel:sales"><legend>Sales tiers count sales per<\/legend>.*?value="week" checked.*?value="month"/s);
+  assert.match(html, /<fieldset class="calc-type calc-choice" data-types="employee"><legend>Your pay goal is for a<\/legend>.*?value="month" checked.*?value="week"/s);
+  for (const n of ['currentClients', 'currentTicket', 'nonClientHours', 'hoursPerDay']) assert.ok(html.indexOf(`name="${n}"`) > html.indexOf('class="calc-advanced"'), `${n} is optional, under Customize`);
+});
+
+test('capacity page: the tier table is for employees on tiered commission only, rows added by the calculator', () => {
+  const html = read('resources/capacity-clients/index.html');
+  const blocks = [...html.matchAll(/<div class="calc-tiers-block"([^>]*)>/g)];
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0][1], ' data-types="employee" data-when="payModel:sales services"', 'tiers show only for employees on tiers');
+  assert.match(html, /data-action="add-tier">\+ Add a tier<\/button>/);
+  const tpl = one(html, /(<template id="calc-tier-template">.*?<\/template>)/s);
+  assert.deepEqual([...tpl.matchAll(/data-col="(\w+)"/g)].map((m) => m[1]), ['from', 'rate']);
+  assert.match(text(html), /Reaching a tier pays its rate on all your sales in that period/);
+  for (const c of CALCS.filter((x) => x !== 'capacity-clients')) assert.doesNotMatch(read(`resources/${c}/index.html`), /calc-tiers|name="payModel"/, c);
+  const mod = read('assets/calc/calculators/capacity-clients.js');
+  assert.match(mod, /if \(root\.dataset\.type !== 'employee' \|\| values\.payModel === 'flat'\) return/, 'tiers are read for employees on tiers only');
+  assert.match(mod, /from '\.\.\/core\/commission\.js'/, 'tier math lives in the engine');
+  const hub = read('resources/index.html');
+  assert.match(one(hub, /(<a class="hub-card" href="capacity-clients\/"[^>]*>)/), /data-desc-employee="Turn your pay goal into clients and hours a week, on flat or tiered commission/);
+});
+
+test('license examples on the pages: static text is the esthetician’s and every data-prof hook matches the wording module', async () => {
+  const { profText, sampleServices, itemPlaceholder, signatureService } = await import('../assets/calc/ui/professions.js');
+  let hooks = 0;
+  for (const c of CALCS) {
+    const html = read(`resources/${c}/index.html`);
+    for (const [, key, shown] of html.matchAll(/<span data-prof="([\w-]+)">([^<]*)<\/span>/g)) {
+      hooks++;
+      assert.equal(shown, profText(key, 'esthetician'), `${c}: data-prof="${key}"`);
+      assert.notEqual(profText(key, 'cosmetologist'), shown === 'Esthetician' ? null : shown, `${c}: ${key} changes with the license`);
+    }
+    for (const [, attrs] of html.matchAll(/<input ([^>]*data-prof-placeholder[^>]*)>/g)) {
+      assert.equal(one(attrs, /placeholder="([^"]*)"/), profText(one(attrs, /data-prof-placeholder="([^"]*)"/), 'esthetician'), `${c}: placeholder`);
+    }
+    // a duration field that names a service always follows the license
+    const dur = fieldOf(html, 'durationMinutes');
+    if (dur) assert.match(dur, /data-prof-placeholder="signature-minutes"/, `${c}: duration placeholder follows the license`);
+    for (const p of ['cosmetologist', 'manicurist', 'barber']) assert.doesNotMatch(profText('signature', p), /facial|peel/i);
+  }
+  assert.ok(hooks >= 10, `only ${hooks} license hooks`);
+  assert.equal(profText('signature', 'esthetician'), signatureService('esthetician').text);
+  const menuTpl = one(read('resources/menu-profitability/index.html'), /(<template id="calc-row-template">.*?<\/template>)/s);
+  assert.match(menuTpl, new RegExp(`placeholder="e\\.g\\. ${sampleServices('esthetician')[0].name}"`), 'menu rows start from the esthetician’s list');
+  assert.match(read('resources/service-cost/index.html'), new RegExp(`placeholder="${itemPlaceholder('esthetician')}"`));
+  for (const [f, re] of [['assets/calc/calculators/menu-profitability.js', /onProfession,/], ['assets/calc/calculators/service-cost.js', /onProfession,/],
+    ['assets/calc/ui/framework.js', /config\.onProfession\?\.\(root, p\)/], ['assets/calc/ui/framework.js', /\[data-prof-placeholder\]/]]) assert.match(read(f), re, f);
+  // hub: the Cost Per Service card names the chosen license's services
+  const hub = read('resources/index.html');
+  const card = one(hub, /(<a class="hub-card" href="service-cost\/"[^>]*>.*?<\/a>)/s);
+  assert.match(card, /data-desc-prof="cost-card"/);
+  assert.equal(one(card, /<p class="hub-card__desc">([^<]*)<\/p>/), profText('cost-card', 'esthetician'));
+  assert.match(read('assets/calc/hub.js'), /profText\(card\.dataset\.descProf, profession\)/);
+  assert.match(profText('cost-card', 'cosmetologist'), /silk press, curly cut or root touch-up, down to the foils/);
 });
 
 test('discount and price-increase pages: 30% target-margin floor, discount below 100%, per-service rent and labor', () => {
@@ -491,6 +551,7 @@ test('menu page: dynamic service rows; wage and commission columns are owners’
   for (const col of ['name', 'price', 'duration', 'product', 'supply']) assert.doesNotMatch(tpl, new RegExp(`data-owner-only><label data-for="${col}"`), col);
   for (const col of ['price', 'duration', 'product', 'supply', 'wage', 'commission']) assert.match(tpl, new RegExp(`data-col="${col}" type="text" inputmode="decimal"`), col);
   assert.match(tpl, /placeholder="60"/, 'example durations stay at 60 minutes');
+  assert.match(tpl, /placeholder="e\.g\. Signature Facial"/, 'the first row’s example is the esthetician’s signature service');
   assert.match(read('assets/style.css'), /\.calc:not\(\[data-type="owner"\]\) \[data-owner-only\]\{display:none\}/, 'solo providers never see wage or commission');
   assert.match(html, /data-for-type="owner" hidden><p>Enter each service’s provider wage/);
   const mod = read('assets/calc/calculators/menu-profitability.js');

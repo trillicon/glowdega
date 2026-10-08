@@ -15,6 +15,7 @@ import { calculateDiscount } from '../assets/calc/core/discount.js';
 import { calculateCapacity, scenarioTickets } from '../assets/calc/core/capacity.js';
 import { calculateMenuProfitability } from '../assets/calc/core/menu.js';
 import { serviceCostParts, profitAt } from '../assets/calc/core/costs.js';
+import { rateForTier, payAt, clientsForGoal, validateTiers, WEEKS_PER_MONTH as WPM, MAX_TIERS } from '../assets/calc/core/commission.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg ?? ''} expected ${b}, got ${a}`);
 const BASE = { durationMinutes: 60, productCost: 10, targetHourly: 50 };
@@ -971,4 +972,98 @@ test('no NaN, Infinity or undefined in any Sprint 2 result, including edge input
     calculateMenuProfitability({ services: MENU, monthlyRent: 0, hoursPerMonth: 744 }),
   ];
   for (const r of results) { assert.equal(r.ok, true); assert.equal(hasBadNumber(r), false, JSON.stringify(r).slice(0, 120)); }
+});
+
+// ======================= Commission tiers (Capacity & Clients, employees) =======================
+
+const COMM_TIERS = [{ from: 0, rate: 0.4 }, { from: 2000, rate: 0.45 }, { from: 3000, rate: 0.5 }];
+const TIERED = { model: 'sales', tiers: COMM_TIERS, tierPeriod: 'week', averageTicket: 100, serviceMinutes: 60 };
+
+test('tiers: below, at and above each threshold; the first tier starts at 0', () => {
+  assert.deepEqual([0, 1999.99, 2000, 2000.01, 2999, 3000, 1e6].map((x) => rateForTier(COMM_TIERS, x).rate), [0.4, 0.4, 0.45, 0.45, 0.45, 0.5, 0.5]);
+  assert.equal(rateForTier(COMM_TIERS, 2000).number, 2);
+  assert.equal(rateForTier([{ from: 0, rate: 0.3 }], 5000).rate, 0.3, 'a single tier is a flat rate');
+});
+
+test('tiers pay their rate on ALL sales in the period, not marginally', () => {
+  const p = payAt(TIERED, 20); // $2,000 a week reaches tier 2
+  near(p.commission, 2000 * 0.45, 'all $2,000 at 45%, not $0 at 45% above the threshold');
+  near(payAt(TIERED, 19).commission, 1900 * 0.4);
+  near(payAt(TIERED, 30).commission, 3000 * 0.5);
+  assert.ok(payAt(TIERED, 20).total - payAt(TIERED, 19).total > 100, 'crossing a tier is a jump (a cliff)');
+});
+
+test('tiers: sales per month vs per week; service tiers count services a week', () => {
+  const month = { ...TIERED, tiers: [{ from: 0, rate: 0.4 }, { from: 8000, rate: 0.5 }], tierPeriod: 'month' };
+  // 18 clients × $100 = $1,800 a week = $7,800 a month (tier 1); 19 = $8,233 a month (tier 2)
+  assert.equal(payAt(month, 18).rate, 0.4);
+  assert.equal(payAt(month, 19).rate, 0.5);
+  near(payAt(month, 19).periodSales, 1900 * WPM);
+  near(payAt(month, 19).commission, 1900 * 0.5, 'pay stays weekly; the month only picks the tier');
+  const week = { ...month, tierPeriod: 'week' };
+  assert.equal(payAt(week, 19).rate, 0.4, 'the same $8,000 threshold counted per week is not reached by $1,900');
+  const services = { ...TIERED, model: 'services', tiers: [{ from: 0, rate: 0.35 }, { from: 25, rate: 0.45 }] };
+  assert.equal(payAt(services, 24).rate, 0.35);
+  assert.equal(payAt(services, 25).rate, 0.45);
+  near(payAt(services, 25).commission, 2500 * 0.45);
+});
+
+test('base wage and tips add to commission: wage on every hour worked, tips per client', () => {
+  const p = payAt({ ...TIERED, model: 'flat', flatRate: 0.4, baseWage: 15, tipPerClient: 12, serviceMinutes: 90, nonClientHours: 5 }, 10);
+  near(p.commission, 400); near(p.clientHours, 15); near(p.hours, 20); near(p.wage, 300); near(p.tips, 120); near(p.total, 820);
+  const r = clientsForGoal({ ...TIERED, model: 'flat', flatRate: 0.4, baseWage: 15, tipPerClient: 12, serviceMinutes: 90, nonClientHours: 5, goal: 820, goalPeriod: 'week' });
+  assert.equal(r.clientsPerWeek, 10, 'exactly at the goal counts as reaching it');
+  near(r.hoursPerWeek, 20); near(r.daysPerWeek, 20 / 8);
+});
+
+test('clientsForGoal: whole clients, monthly goal ÷ 4.33, sales and hours needed', () => {
+  const r = clientsForGoal({ ...TIERED, goal: 4000, goalPeriod: 'month' });
+  near(r.weeklyGoal, 4000 / WPM);
+  // tier 1 pays $40 a client; 20 clients reach $2,000 and 45% on all: $900 < $923.08, so 21 × $45 = $945 is the first enough
+  assert.equal(r.clientsPerWeek, 21);
+  assert.equal(r.tier.number, 2);
+  near(r.salesPerWeek, 2100); near(r.clientsPerMonth, 21 * WPM); near(r.hoursPerWeek, 21);
+  assert.ok(Number.isInteger(r.clientsPerWeek));
+  for (let c = 0; c < r.clientsPerWeek; c++) assert.ok(payAt(TIERED, c).total < r.weeklyGoal, `${c} clients would already be enough`);
+});
+
+test('next tier: how many more clients unlock it and what it pays; the cliff where one more client crosses', () => {
+  // $50 a client (40% + $10 tip) → 19 clients for $923.08; the 20th reaches $2,000 and 45% on all sales
+  const r = clientsForGoal({ ...TIERED, tipPerClient: 10, goal: 4000, goalPeriod: 'month' });
+  assert.equal(r.clientsPerWeek, 19);
+  assert.equal(r.tier.number, 1);
+  assert.equal(r.next.number, 2); assert.equal(r.next.clients, 20); assert.equal(r.next.extraClients, 1);
+  near(r.next.payWeekly, 2000 * 0.45 + 200); near(r.next.gainWeekly, 1100 - 950); near(r.next.gainMonthly, 150 * WPM);
+  assert.equal(r.next.cliff, true, '$150 for one more client, against $50 a client now');
+  // well inside a tier with a flat-ish step up: no cliff flagged when the next tier pays no more per extra client
+  const flatish = clientsForGoal({ ...TIERED, tiers: [{ from: 0, rate: 0.4 }, { from: 5000, rate: 0.4 }], goal: 400, goalPeriod: 'week' });
+  assert.equal(flatish.next.cliff, false);
+  // the top tier has no next tier
+  const top = clientsForGoal({ ...TIERED, goal: 2000, goalPeriod: 'week' });
+  assert.equal(top.tier.number, 3); assert.equal(top.next, null); assert.equal(top.tier.top, true);
+  assert.deepEqual(top.steps.map((s) => s.clients), [0, 20, 30], 'each tier’s fewest clients a week');
+});
+
+test('commission edge cases: unreachable goals, invalid tiers, ticket 0 and NaN are errors, never numbers', () => {
+  const zero = clientsForGoal({ ...TIERED, model: 'flat', flatRate: 0, goal: 1000 });
+  assert.equal(zero.ok, false); assert.match(zero.errors._, /pays \$0/);
+  const allZero = clientsForGoal({ ...TIERED, tiers: [{ from: 0, rate: 0 }, { from: 100, rate: 0 }], goal: 1000 });
+  assert.match(allZero.errors._, /pays \$0/);
+  const tooMuch = clientsForGoal({ ...TIERED, goal: 1e7, goalPeriod: 'week' });
+  assert.equal(tooMuch.ok, false); assert.equal(tooMuch.unreachable, true);
+  assert.match(tooMuch.errors._, /^Even 168 clients a week/, 'the search stops at the clients that fit in a week');
+  assert.ok(clientsForGoal({ ...TIERED, averageTicket: 0, goal: 1000 }).errors.averageTicket);
+  for (const bad of [NaN, Infinity, -1, 0]) assert.ok(clientsForGoal({ ...TIERED, goal: bad }).errors.incomeGoal, String(bad));
+  assert.ok(clientsForGoal({ ...TIERED, averageTicket: NaN, goal: 1000 }).errors.averageTicket);
+  assert.deepEqual(validateTiers([{ from: 0, rate: 0.4 }, { from: 3000, rate: 0.5 }, { from: 2000, rate: 0.6 }]), { 'tierFrom-2': 'Each tier must start above the one before it.' });
+  assert.deepEqual(validateTiers([{ from: 0, rate: 0.4 }, { from: 2000, rate: 0.4 }, { from: 2000, rate: 0.5 }]), { 'tierFrom-2': 'Each tier must start above the one before it.' });
+  assert.deepEqual(validateTiers([{ from: 500, rate: 0.4 }]), { 'tierFrom-0': 'The first tier starts at 0.' });
+  assert.deepEqual(validateTiers([{ from: 0, rate: 1.2 }]), { 'tierRate-0': 'Enter a rate from 0% to 100%.' });
+  assert.deepEqual(validateTiers([{ from: 0, rate: NaN }]), { 'tierRate-0': 'Enter a rate from 0% to 100%.' });
+  assert.deepEqual(validateTiers([{ from: 0, rate: 0.3 }, { from: 12.5, rate: 0.4 }], 'services'), { 'tierFrom-1': 'Enter a whole number of services.' });
+  assert.ok(validateTiers([]).tiers);
+  assert.ok(validateTiers(Array.from({ length: MAX_TIERS + 1 }, (_, i) => ({ from: i * 100, rate: 0.4 }))).tiers);
+  assert.deepEqual(validateTiers([{ from: 0, rate: 0 }, { from: 1, rate: 1 }]), {}, 'rates 0% and 100% are allowed');
+  const r = clientsForGoal({ ...TIERED, goal: 900, goalPeriod: 'week' });
+  assert.equal(hasBadNumber(r), false);
 });

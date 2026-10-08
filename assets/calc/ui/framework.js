@@ -3,7 +3,7 @@
 // No financial formulas live here.
 import { parseNumber, hasBadNumber } from '../core/validation.js';
 import { shareResults, wireSharePanel, emailHref } from './share.js';
-import { PROFESSIONS, PROFESSION_KEY, TYPE_KEY as AUDIENCE_KEY, TYPES, professionOf, signatureService, savedChoice, saveChoice } from './professions.js';
+import { PROFESSIONS, PROFESSION_KEY, TYPE_KEY as AUDIENCE_KEY, TYPES, professionOf, profText, savedChoice, saveChoice } from './professions.js';
 
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -86,12 +86,19 @@ export function mountCalculator(config) {
   // ---------- profession: wording only (example services in hints, insights and share text); never the numbers ----------
   const profSelect = form.querySelector('select[name="profession"]');
   const professionNow = () => professionOf(profSelect?.value);
+  // A 60/90 choice marked data-prof-default follows the license's signature length until the visitor picks one.
+  const profDefaults = [...form.querySelectorAll('[data-prof-default]')];
+  for (const g of profDefaults) g.addEventListener('change', (e) => { if (e.isTrusted) g.dataset.touched = '1'; });
   function applyProfession() {
-    const sig = signatureService(professionNow());
-    for (const n of root.querySelectorAll('[data-prof]')) {
-      const k = n.dataset.prof;
-      n.textContent = k === 'signature' ? sig.text : k === 'signature-minutes' ? String(sig.minutes) : k === 'signature-name' ? sig.name : PROFESSIONS[professionNow()].label;
+    const p = professionNow();
+    for (const n of root.querySelectorAll('[data-prof]')) n.textContent = profText(n.dataset.prof, p);
+    for (const i of root.querySelectorAll('[data-prof-placeholder]')) i.placeholder = profText(i.dataset.profPlaceholder, p);
+    for (const g of profDefaults) {
+      if (g.dataset.touched || params.has(g.querySelector('input')?.name)) continue;
+      const want = g.querySelector(`input[value="${CSS.escape(profText(g.dataset.profDefault, p))}"]`);
+      if (want) want.checked = true;
     }
+    config.onProfession?.(root, p);
   }
   if (profSelect) {
     const wanted = [params.get('profession'), savedChoice(PROFESSION_KEY)].find((p) => Object.hasOwn(PROFESSIONS, p || ''));
@@ -237,6 +244,7 @@ export function mountCalculator(config) {
     timer = setTimeout(() => run(false), 350);
   });
   config.onReady?.(root, () => { if (calculated) run(false); });
+  config.onProfession?.(root, professionNow()); // rows added by onReady take the license's examples too
 
   // ---------- actions ----------
   const shareData = () => ({ name, url: pageUrl, view: lastView });

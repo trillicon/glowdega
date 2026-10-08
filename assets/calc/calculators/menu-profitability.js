@@ -3,7 +3,7 @@ import { calculateMenuProfitability, MAX_MENU_SERVICES, SIMILAR_SHARE } from '..
 import { parseNumber } from '../core/validation.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
-import { signatureService } from '../ui/professions.js';
+import { signatureService, sampleServices, professionOf } from '../ui/professions.js';
 
 const MONEY = (name) => ({ name, unit: 'money', max: 10_000_000 });
 // [column, engine key, rule, required, owner only]
@@ -40,6 +40,17 @@ function readRows(root) {
   return { values: { services }, errors };
 }
 
+/** Row placeholders are the license's own services, in list order: Silk Press 90, Curly Cut 90… for a hairstylist. */
+function onProfession(root, profession) {
+  const samples = sampleServices(profession, Infinity);
+  [...root.querySelectorAll('.calc-row')].forEach((row, i) => {
+    const s = samples[i % samples.length];
+    row.querySelector('[data-col="name"]').placeholder = `e.g. ${s.name}`;
+    row.querySelector('[data-col="duration"]').placeholder = String(s.minutes);
+  });
+}
+const professionIn = (root) => professionOf(root.querySelector('select[name="profession"]')?.value);
+
 function addRow(root) {
   const rows = root.querySelector('.calc-rows');
   if (rows.children.length >= MAX_MENU_SERVICES) return null;
@@ -53,6 +64,7 @@ function addRow(root) {
     if (err) { err.id = id + '-error'; input.setAttribute('aria-describedby', err.id); }
   }
   rows.append(row);
+  onProfession(root, professionIn(root));
   return row;
 }
 
@@ -116,6 +128,7 @@ function menuNode(r, recs) {
 
 export const config = mountCalculator({
   readExtra: readRows,
+  onProfession,
   printExtra: (root) => readRows(root).values.services.map((s, i) => [s.name || `Service ${i + 1}`, `$${s.price} · ${s.durationMinutes} min`]),
   onReady(root, recalc) {
     const rows = root.querySelector('.calc-rows');

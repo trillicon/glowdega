@@ -3,7 +3,7 @@ import { calculateServiceCost } from '../core/costs.js';
 import { parseNumber } from '../core/validation.js';
 import { formatMoney as money, formatNumber } from '../core/money.js';
 import { formatPercent, toRate } from '../core/percentages.js';
-import { serviceText, signatureService } from '../ui/professions.js';
+import { serviceText, signatureService, sampleItems, itemPlaceholder, professionOf } from '../ui/professions.js';
 
 const LABEL = { product: 'Product', supply: 'Supplies', other: 'Other consumable' };
 const QTY = { name: 'a quantity', unit: 'number', max: 100000 };
@@ -30,6 +30,15 @@ function readRows(root) {
   return { values, errors };
 }
 
+/** Item placeholders follow the license: each starting row names its own example, added rows a short list. */
+function onProfession(root, profession) {
+  const samples = sampleItems(profession);
+  for (const row of root.querySelectorAll('.calc-row')) {
+    const i = row.dataset.sample;
+    row.querySelector('[data-col="name"]').placeholder = i !== undefined ? `e.g. ${samples[i][1].toLowerCase()}` : itemPlaceholder(profession);
+  }
+}
+
 function addRow(root, category = 'product') {
   const tpl = root.querySelector('#calc-row-template');
   const row = tpl.content.firstElementChild.cloneNode(true);
@@ -48,18 +57,21 @@ function addRow(root, category = 'product') {
 
 export const config = mountCalculator({
   readExtra: readRows,
+  onProfession,
   printExtra: (root) => readRows(root).values.meta.map((m) => [`${m.name} (${LABEL[m.category].toLowerCase()})`, `${m.qty} × $${m.cost}`]),
   onReady(root, recalc) {
     const rows = root.querySelector('.calc-rows');
-    for (const cat of ['product', 'product', 'supply', 'other']) addRow(root, cat);
-    root.querySelector('[data-action="add-row"]').addEventListener('click', () => addRow(root).querySelector('[data-col="name"]').focus());
+    // the starting rows are the license's own examples (placeholders only): developer and foils for a hairstylist
+    sampleItems(null).forEach(([cat], i) => { addRow(root, cat).dataset.sample = String(i); });
+    const add = () => { const row = addRow(root); onProfession(root, professionOf(root.querySelector('select[name="profession"]')?.value)); return row; };
+    root.querySelector('[data-action="add-row"]').addEventListener('click', () => add().querySelector('[data-col="name"]').focus());
     rows.addEventListener('click', (e) => {
       const b = e.target.closest('[data-action="remove-row"]');
       if (!b) return;
       const row = b.closest('.calc-row');
       const next = row.nextElementSibling || row.previousElementSibling;
       row.remove();
-      if (!rows.children.length) addRow(root);
+      if (!rows.children.length) add();
       (next || rows.querySelector('.calc-row'))?.querySelector('[data-col="name"]')?.focus();
       recalc();
     });
