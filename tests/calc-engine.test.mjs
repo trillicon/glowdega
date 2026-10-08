@@ -20,7 +20,8 @@ test('pricing: normal service (overhead, processing and margin)', () => {
   assert.equal(r.ok, true);
   near(r.overhead, 30, 'overhead per appointment');
   near(r.rentShare, 0, 'no rent entered, no rent added');
-  near(r.breakEvenPrice, 40 / 0.97, 'break-even price');
+  near(r.breakEvenPrice, 90 / 0.97, 'break-even price includes labor');
+  near(r.breakEvenPrice * 0.97 - 40 - 50, 0, 'profit at the break-even price is exactly $0');
   near(r.recommendedPrice, 90 / 0.67, 'recommended price');
   // the recommended price really covers its own processing fee and leaves the margin (no circular error)
   const P = r.recommendedPrice;
@@ -36,7 +37,7 @@ test('pricing: zero overhead needs no appointment count; margin defaults to the 
   assert.equal(r.ok, true);
   near(r.overhead, 0);
   near(r.recommendedPrice, 60 / 0.7, 'cost + time, grossed up for the default 30% margin');
-  near(r.breakEvenPrice, 10);
+  near(r.breakEvenPrice, 60, 'products + labor, no fees');
   near(r.recommended.profit, 0.3 * r.recommendedPrice);
   near(r.recommended.margin, MIN_PROFIT_MARGIN);
   assert.equal(calculateServicePricing({ ...BASE, profitMargin: 0 }).ok, false, 'a 0% margin is no longer accepted');
@@ -314,7 +315,7 @@ test('rent in service pricing: part of the cost base and the break-even price, n
   const base = { durationMinutes: 90, productCost: 12, targetHourly: 50, processingRate: 0.03, profitMargin: 0.3 };
   const r = calculateServicePricing({ ...base, monthlyRent: 2000, hoursPerMonth: 160 });
   near(r.rentShare, 18.75);
-  near(r.breakEvenPrice, (12 + 18.75) / 0.97);
+  near(r.breakEvenPrice, (12 + 18.75 + 75) / 0.97);
   near(r.recommendedPrice, (12 + 18.75 + 75) / 0.67);
   const noRent = calculateServicePricing(base);
   near(r.recommendedPrice - noRent.recommendedPrice, 18.75 / 0.67, 'rent adds exactly its share, grossed up once');
@@ -530,7 +531,9 @@ test('labor in service pricing (owner): wage × hours + commission, grossed up l
   near(withFees.recommendedPrice, 60 / (1 - 0.03 - 0.4 - 0.3));
   const P = withFees.recommendedPrice;
   near(P - P * 0.03 - P * 0.4 - 10 - 50, 0.3 * P, 'processing + commission + margin all come out of the final price');
-  near(withFees.breakEvenPrice, 10 / 0.97, 'break-even pays labor $0');
+  near(withFees.breakEvenPrice, 60 / (1 - 0.03 - 0.4), 'break-even pays the wage and the commission');
+  const B = withFees.breakEvenPrice;
+  near(B - B * 0.03 - B * 0.4 - 10 - 50, 0, 'profit at the break-even price is exactly $0');
   // a current price is judged after commission too
   near(calculateServicePricing({ ...BASE, commissionRate: 0.4, currentPrice: 150 }).current.profit, 150 - 60 - 60);
 });

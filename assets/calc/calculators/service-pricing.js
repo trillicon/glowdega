@@ -39,7 +39,7 @@ export const config = mountCalculator({
       : `${money(hourlyLabor)}/hour × ${hrs}` + (r.loadFactor > 1 ? ', with non-client hours' : '');
     const cards = [
       { label: 'Current price', value: r.current ? money(r.current.price) : 'Not entered' },
-      { label: 'Break-even price', value: money(r.breakEvenPrice), note: 'Covers products, rent and other overhead, with $0 for ' + timeWord },
+      { label: 'Break-even price', value: money(r.breakEvenPrice), note: 'Covers products, rent, other overhead and ' + timeWord + ', with $0 profit' },
       { label: 'Recommended price', value: money(r.recommendedPrice, { up: true }) },
       { label: owner ? 'Labor for this service' : 'Your pay for this service', value: money(r.laborAtRecommended, { cents: true }), note: laborNote },
       { label: `Estimated ${p.word.toLowerCase()} ${where}`, value: money(p.amount), loss: p.loss, note: `After paying ${timeWord}` },
@@ -84,7 +84,7 @@ export const config = mountCalculator({
       `Recommended price = (${owner ? 'wage' : 'your pay'} + products + rent + other overhead) ÷ (1 − ${formatPercent(toRate(v.processingRate), 1)} processing` +
         (owner ? ` − ${commissionPct} commission` : '') + ` − ${formatPercent(toRate(v.profitMargin), 1)} margin). Solving it this way charges the card fee${owner ? ' and commission' : ''} on the final price, so nothing is left out.`,
       `The profit margin is at least ${minimum}; a lower margin is not accepted. Processing${owner ? ', commission' : ''} and margin together must stay below 100% of the price.`,
-      'Break-even price = (products + rent + other overhead) ÷ (1 − processing): the lowest price that covers costs before paying anyone for their time.',
+      'Break-even price = (products + rent + other overhead + labor) ÷ (1 − processing − commission): the lowest price that covers every cost, labor included, with $0 profit.',
       'The recommended range runs from the recommended price to 10% above it, leaving room to round to a menu-friendly number.',
       'Profit here means what is left after costs and after paying ' + timeWord + '.',
     ];

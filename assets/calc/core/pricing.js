@@ -67,7 +67,8 @@ export function calculateServicePricing({
   const timeValue = targetHourly * hours * loadFactor;
   const rentShare = rent.rentShare;
   const directCosts = productCost + rentShare + overhead;
-  const breakEvenPrice = directCosts / (1 - processingRate);
+  // break-even = every cost including labor is paid and profit is exactly $0
+  const breakEvenPrice = (directCosts + timeValue) / (1 - processingRate - commissionRate);
   const recommendedPrice = (directCosts + timeValue) / (1 - processingRate - commissionRate - profitMargin);
 
   const at = (price) => {
