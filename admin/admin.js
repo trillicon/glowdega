@@ -1,4 +1,5 @@
 // Gazette review queue. Talks to /api/admin/* (Cloudflare Access protects both).
+import { initLibrary, showLibrary } from './images.js';
 const $ = (s) => document.querySelector(s);
 const STATES = ['draft', 'scheduled', 'published', 'rejected'];
 const FIELDS = ['title', 'slug', 'category', 'excerpt', 'hero_image', 'body_md'];
@@ -102,7 +103,17 @@ async function loadList() {
   renderList();
 }
 
+// "#images" shows the photo library; any other hash is a post id.
+function showView(view) {
+  $('.layout').hidden = view !== 'posts';
+  $('#library').hidden = view !== 'images';
+  for (const a of document.querySelectorAll('.views a')) a.setAttribute('aria-current', String(a.dataset.view === view));
+  if (view === 'images') showLibrary();
+}
+
 async function open(id) {
+  showView(id === 'images' ? 'images' : 'posts');
+  if (id === 'images') return;
   if (!id) { current = null; renderEditor(); renderList(); return; }
   try {
     current = (await api('/posts/' + encodeURIComponent(id))).post;
@@ -208,6 +219,8 @@ document.querySelector('.tabs').addEventListener('click', (e) => {
   renderList();
 });
 
+initLibrary({ toast, confirmStep });
+
 window.addEventListener('hashchange', () => {
   if (dirty && !confirm('You have unsaved changes. Leave this post?')) return;
   open(location.hash.slice(1));
@@ -215,12 +228,9 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('beforeunload', (e) => { if (dirty) e.preventDefault(); });
 
 (async () => {
-  try {
-    await loadList();
-    await open(location.hash.slice(1));
-  } catch (err) {
-    toast(err.message, true);
-  }
+  // The photo library must still open if the post list fails to load.
+  try { await loadList(); } catch (err) { toast(err.message, true); }
+  try { await open(location.hash.slice(1)); } catch (err) { toast(err.message, true); }
 })();
 
 export { STATES };

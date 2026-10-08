@@ -10,6 +10,7 @@
 <body>
 <header class="bar">
   <a class="logo" href="/admin/">GLOWDEGA® <span>ADMIN</span></a>
+  <nav class="views" aria-label="Admin sections"><a href="#" data-view="posts">Review queue</a><a href="#images" data-view="images">Photos</a></nav>
   <div class="who"><span id="who"></span><a href="/" target="_blank" rel="noopener">View site ↗</a><a href="/cdn-cgi/access/logout">Log out</a></div>
 </header>
 
@@ -70,6 +71,20 @@
     <p>Pick a post on the left. Drafts arrive here from the drafts API; nothing goes live until you approve it.</p>
   </section>
 </div>
+
+<section class="library" id="library" hidden aria-labelledby="libTitle">
+  <div class="lib-head">
+    <h1 id="libTitle">Photos</h1>
+    <p>Upload photos for articles. Each one gets a link on images.glowdega.com to paste into a post's featured image or body.</p>
+  </div>
+  <label class="drop" id="drop">
+    <input type="file" id="files" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+    <span id="dropText"></span>
+  </label>
+  <p class="lib-count" id="libCount"></p>
+  <p class="empty" id="libEmpty" hidden>No photos uploaded yet.</p>
+  <ul class="grid" id="grid"></ul>
+</section>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="/admin/admin.js" type="module"></script>
