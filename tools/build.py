@@ -294,13 +294,15 @@ for f in os.listdir(art_dir):
     if f.endswith('.html'): os.remove(os.path.join(art_dir, f))
 
 AUTHOR = 'Hadiyah Daché'
+# Shown under "Written by" and as schema.org jobTitle (functions/_lib/site.js AUTHOR must match).
+AUTHOR_CREDENTIAL = 'Licensed Cosmetologist & Esthetician'
 
 def article_ld(title, desc, date_iso):
     """schema.org BlogPosting for an article (functions/_lib/site.js builds the same shape for admin posts)."""
     return {'@context': 'https://schema.org', '@type': 'BlogPosting', 'headline': title, 'description': desc,
             'datePublished': date_iso, 'inLanguage': 'en-US',
-            'author': {'@type': 'Person', 'name': AUTHOR, 'jobTitle': 'Licensed Esthetician',
-                       'url': 'https://www.fairyglowmother.com/'},
+            'author': {'@type': 'Person', 'name': AUTHOR, 'alternateName': 'Fairy Glow Mother',
+                       'jobTitle': AUTHOR_CREDENTIAL, 'url': 'https://www.fairyglowmother.com/'},
             'publisher': {'@type': 'Organization', 'name': 'GLOWDEGA®'}}
 
 def ld_json(data):
@@ -317,7 +319,7 @@ def article_page(title, date_iso, date_txt, cats, minutes, hero_src, body, pager
     """Article page. `cats`, `body` and `pager` (the related-post cards) are HTML; everything else is plain text."""
     hero = (f'<figure class="article-image"><img src="{hero_src}" alt="" fetchpriority="high"></figure>'
             if hero_src else '')
-    info = (f'<div class="article-info"><div class="side-label">Written by</div><p>{AUTHOR}, licensed esthetician</p>'
+    info = (f'<div class="article-info"><div class="side-label">Written by</div><p>{AUTHOR}, {esc(AUTHOR_CREDENTIAL.lower())}</p>'
             f'<div class="side-label">Published</div><p><time datetime="{date_iso}">{date_txt}</time></p>'
             + (f'<div class="side-label">Filed under</div><p>{cats}</p>' if cats else '')
             + f'<div class="side-label">Reading time</div><p>{minutes} min</p>'

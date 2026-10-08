@@ -59,7 +59,7 @@ export function excerptFrom(md) {
 }
 
 // ---------- structured data (schema.org) ----------
-const AUTHOR = { '@type': 'Person', name: 'Hadiyah Daché', jobTitle: 'Licensed Esthetician', url: 'https://www.fairyglowmother.com/' };
+const AUTHOR = { '@type': 'Person', name: 'Hadiyah Daché', alternateName: 'Fairy Glow Mother', jobTitle: 'Licensed Cosmetologist & Esthetician', url: 'https://www.fairyglowmother.com/' };
 const stripMd = (md) => plainText(renderMarkdown(md));
 
 // "## FAQ" section with "### Question" headings → [{q, a}]
