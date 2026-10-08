@@ -295,7 +295,7 @@ def page(root, title, desc, main, extra_head=''):
 
 # Header and footer for every page; static pages (index, book, policies, pages/*) are synced at the end of the build.
 def header(root):
-    return (f'<header><a class="logo" href="{root}index.html">GLOWDEGA®</a><nav class="nav">'
+    return (f'<header><a class="logo" href="{root}index.html"><img src="{root}assets/img/brand/glowdega-logo.png" alt="GLOWDEGA®" width="823" height="200"></a><nav class="nav">'
             f'<a href="{root}blog.html">The Glow Gazette</a><a href="https://www.fairyglowmother.com/">About Hadiyah</a>'
             f'<a href="{root}esthetician-directory.html">Esthetician Directory</a><a href="{root}resources/">Resources</a></nav>'
             f'<div class="right"><a class="book-pill" href="{root}book.html">GET THE BOOK</a></div></header>')
@@ -503,6 +503,21 @@ _spec = importlib.util.spec_from_file_location('resources_site', os.path.join(os
 resources_site = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(resources_site)
 print('resources: ' + ', '.join(resources_site.build(SITE, page, ld_json)))
+
+# ---------- favicon ----------
+# Every page (generated, synced static pages, the article template, hand-made pages) links the brand icons.
+ICON_LINKS = ('<link rel="icon" href="/favicon.ico" sizes="48x48">'
+              '<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/brand/favicon-32.png">'
+              '<link rel="apple-touch-icon" href="/assets/img/brand/apple-touch-icon.png">')
+for dirpath, dirnames, filenames in os.walk(SITE):
+    dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in ('admin', 'node_modules')]
+    for fn in filenames:
+        if not fn.endswith('.html'): continue
+        path = os.path.join(dirpath, fn)
+        doc = open(path).read()
+        new = re.sub(r'<link rel="(?:icon|apple-touch-icon)"[^>]*>', '', doc)
+        new = new.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + ICON_LINKS, 1)
+        if new != doc: open(path, 'w').write(new)
 
 # ---------- stylesheet version ----------
 # Browsers keep assets/style.css for hours, so every page links it as style.css?v=<content hash>: a CSS change gives
