@@ -112,13 +112,13 @@ test('every archive post and every admin post opens with the affiliate note', ()
 test('the article template uses root-absolute links, so /admin/preview/<id> is styled', async () => {
   const tpl = read('assets/templates/article.html');
   assert.ok(!tpl.includes('../'), 'no relative ../ links');
-  assert.ok(tpl.includes('<link rel="stylesheet" href="/assets/style.css">'));
+  assert.match(tpl, /<link rel="stylesheet" href="\/assets\/style\.css\?v=[0-9a-f]{10}">/);
   const env = makeEnv();
   insertPost(env, { id: 'd1', slug: 'draft-one', tags: '["Night routine"]' });
   const res = await previewPage({ env, params: { id: 'd1' }, request: new Request('https://x.test/admin/preview/d1') });
   const html = await res.text();
   assert.equal(res.status, 200);
-  assert.ok(html.includes('href="/assets/style.css"'));
+  assert.match(html, /href="\/assets\/style\.css\?v=[0-9a-f]{10}"/);
   assert.ok(!/(href|src)="\.\.\//.test(html), 'nothing resolves under /admin/');
   assert.ok(html.includes(filedUnder('Acne', ['Night routine'])));
   assert.ok(html.includes('class="affiliate-note"'));

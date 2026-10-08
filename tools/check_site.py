@@ -97,7 +97,7 @@ for p in [p for p in pages if p.startswith('blog' + os.sep)]:
 
 tpl = read('assets/templates/article.html')
 check('../' not in tpl, 'templates/article.html: relative ../ links break /admin/preview; use root-absolute paths')
-check('href="/assets/style.css"' in tpl, 'templates/article.html: stylesheet is not /assets/style.css')
+check(re.search(r'href="/assets/style\.css\?v=[0-9a-f]{10}"', tpl), 'templates/article.html: stylesheet is not /assets/style.css?v=<hash>')
 check('<div class="prose">' + NOTE_P + '%%BODY%%' in tpl, 'templates/article.html: affiliate note is not first in the text')
 check('%%SIDE_CATS%%' in tpl, 'templates/article.html: missing %%SIDE_CATS%%')
 for marker in ('data-ad-terms="%%AD_TERMS%%"', '<aside class="ad-rail" aria-label="Advertisement" data-ad-slot="rail">%%AD_RAIL%%</aside>',

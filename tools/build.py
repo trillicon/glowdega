@@ -496,4 +496,19 @@ for root, names in (('', ['index', 'book', 'policies', 'privacy', 'tos']), ('../
         doc = re.sub(r'<footer>.*?</footer>', lambda m: footer(root), doc, count=1, flags=re.S)
         open(path, 'w').write(doc)
 
+# ---------- stylesheet version ----------
+# Browsers keep assets/style.css for hours, so every page links it as style.css?v=<content hash>: a CSS change gives
+# a new address and returning visitors get it at once. Covers every page, the article template and hand-made pages.
+import hashlib
+CSS_VERSION = hashlib.sha256(open(os.path.join(SITE, 'assets', 'style.css'), 'rb').read()).hexdigest()[:10]
+for dirpath, dirnames, filenames in os.walk(SITE):
+    dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in ('admin', 'node_modules')]
+    for fn in filenames:
+        if not fn.endswith('.html'): continue
+        path = os.path.join(dirpath, fn)
+        doc = open(path).read()
+        new = re.sub(r'(assets/style\.css)(\?v=[0-9a-f]+)?"', rf'\1?v={CSS_VERSION}"', doc)
+        if new != doc: open(path, 'w').write(new)
+print(f'stylesheet version {CSS_VERSION}')
+
 print(f'\nbuilt {len(posts)} articles; {sum(1 for v in cache.values() if v)} images saved, {sum(1 for v in cache.values() if not v)} dead')

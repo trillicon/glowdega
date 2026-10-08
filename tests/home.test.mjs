@@ -61,3 +61,26 @@ test('book page carries no build notes (the second section is removed until ther
   assert.doesNotMatch(book, /intentionally built|this destination can be updated/i);
   assert.match(book, /<section class="book">/);
 });
+
+test('every page links the stylesheet as style.css?v=<hash of the current CSS>, so browsers never keep a stale copy', async () => {
+  const { createHash } = await import('node:crypto');
+  const { readdirSync, statSync } = await import('node:fs');
+  const version = createHash('sha256').update(readFileSync(join(ROOT, 'assets/style.css'))).digest('hex').slice(0, 10);
+  const pages = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      if (name.startsWith('.') || name === 'admin' || name === 'node_modules') continue;
+      const p = join(dir, name);
+      if (statSync(p).isDirectory()) walk(p); else if (name.endsWith('.html')) pages.push(p);
+    }
+  };
+  walk(ROOT);
+  const stale = [];
+  for (const p of pages) {
+    for (const m of readFileSync(p, 'utf8').matchAll(/assets\/style\.css(\?v=[0-9a-f]+)?"/g)) {
+      if (m[1] !== `?v=${version}`) stale.push(p.slice(ROOT.length + 1));
+    }
+  }
+  assert.ok(pages.length > 140, `only ${pages.length} pages found`);
+  assert.deepEqual(stale, [], 'run tools/build.py after changing assets/style.css');
+});
