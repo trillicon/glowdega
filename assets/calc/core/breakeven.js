@@ -5,16 +5,18 @@ import { guard } from './validation.js';
 /**
  * net price     = price × (1 − processing)
  * contribution  = net price − variable cost (+ retail revenue after processing and retail product cost)
+ * fixed costs   = monthly rent + other monthly fixed costs
  * appointments  = fixed costs / contribution
  * revenue       = appointments × (service price + retail revenue)
  * A contribution of zero or less means break-even is impossible: each appointment loses money before fixed costs.
  */
 export function calculateBreakEven({
-  fixedCosts, servicePrice, variableCost = 0, processingRate = 0,
+  fixedCosts, monthlyRent = 0, servicePrice, variableCost = 0, processingRate = 0,
   retailRevenue = 0, retailCostRate = 0, workingDaysPerWeek = 5,
 }) {
   const errors = guard([
-    ['fixedCosts', fixedCosts, (v) => v >= 0, 'Enter monthly fixed costs of $0 or more.'],
+    ['fixedCosts', fixedCosts, (v) => v >= 0, 'Enter other monthly fixed costs of $0 or more.'],
+    ['monthlyRent', monthlyRent, (v) => v >= 0, 'Enter monthly rent of $0 or more.'],
     ['servicePrice', servicePrice, (v) => v > 0, 'Enter an average service price greater than $0.'],
     ['variableCost', variableCost, (v) => v >= 0, 'Enter a variable cost of $0 or more.'],
     ['processingRate', processingRate, (v) => v >= 0 && v < 1, 'Enter a payment processing rate below 100%.'],
@@ -23,13 +25,14 @@ export function calculateBreakEven({
     ['workingDaysPerWeek', workingDaysPerWeek, (v) => v > 0 && v <= 7, 'Enter working days per week between 1 and 7.'],
   ]);
   if (Object.keys(errors).length) return { ok: false, errors };
+  const totalFixed = monthlyRent + fixedCosts;
   const netPrice = servicePrice * (1 - processingRate);
   const retailContribution = retailRevenue * (1 - processingRate) - retailRevenue * retailCostRate;
   const contribution = netPrice - variableCost + retailContribution;
   const ticket = servicePrice + retailRevenue;
-  const base = { ok: true, netPrice, contribution, ticket, fixedCosts, contributionMargin: contribution / ticket };
+  const base = { ok: true, netPrice, contribution, ticket, fixedCosts: totalFixed, rent: monthlyRent, otherFixedCosts: fixedCosts, contributionMargin: contribution / ticket };
   if (contribution <= 0.000001) return { ...base, possible: false, reason: contribution < -0.000001 ? 'negative' : 'zero' };
-  const appointments = fixedCosts / contribution;
+  const appointments = totalFixed / contribution;
   const weeklyAppointments = appointments / WEEKS_PER_MONTH;
   return {
     ...base, possible: true, appointments,

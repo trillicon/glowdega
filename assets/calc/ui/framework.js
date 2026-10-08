@@ -25,7 +25,7 @@ function ruleOf(input) {
   const d = input.dataset;
   return {
     name: d.name || input.name, unit: d.unit || 'number', required: 'required' in d,
-    min: d.min !== undefined ? Number(d.min) : 0, minExclusive: 'minExclusive' in d,
+    min: d.min !== undefined ? Number(d.min) : 0, minExclusive: 'minExclusive' in d, minMessage: d.minMessage,
     max: d.max !== undefined ? Number(d.max) : undefined, maxExclusive: 'maxExclusive' in d, integer: 'integer' in d,
   };
 }
@@ -59,8 +59,13 @@ export function mountCalculator(config) {
   function applyType(type) {
     root.dataset.type = type || '';
     const unsupported = (config.unsupportedTypes || []).includes(type);
-    for (const f of form.querySelectorAll('[data-types]')) {
-      const show = !unsupported && f.dataset.types.split(' ').includes(type);
+    // data-types="solo owner": only for those business types. data-when="payType:commission mixed": only while that
+    // choice is selected. An element with both needs both.
+    for (const f of form.querySelectorAll('[data-types], [data-when]')) {
+      const typeOk = !f.dataset.types || (!unsupported && f.dataset.types.split(' ').includes(type));
+      const [choice, wanted = ''] = (f.dataset.when || '').split(':');
+      const whenOk = !choice || wanted.split(' ').includes(form.querySelector(`input[name="${choice}"]:checked`)?.value);
+      const show = typeOk && whenOk;
       f.hidden = !show;
       for (const i of f.querySelectorAll('input,select,button')) i.disabled = !show;
     }
@@ -79,6 +84,11 @@ export function mountCalculator(config) {
     radios.forEach((r) => r.addEventListener('change', () => { saveAudience(r.value); applyType(r.value); }));
     applyType(typeOf());
   }
+  // a choice other fields depend on (data-when) re-applies visibility and recalculates
+  form.addEventListener('change', (e) => {
+    const n = e.target.name;
+    if (n && n !== 'businessType' && e.target.type === 'radio' && form.querySelector(`[data-when^="${n}:"]`)) applyType(typeOf());
+  });
 
   // ---------- validation ----------
   function showError(input, message) {

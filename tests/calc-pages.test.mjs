@@ -84,7 +84,59 @@ test('calculator pages: shared framework hooks (labels, numeric keyboards, live 
     assert.ok(src && existsSync(join(ROOT, src)), `${c}: module script missing`);
   }
   assert.match(read('resources/service-pricing/index.html'), /name="businessType" value="owner"/);
-  assert.doesNotMatch(read('resources/service-cost/index.html'), /businessType/, 'no selector where it has no purpose');
+  // service-cost now has rent, which employees never see, so it carries the selector with all three types
+  const cost = read('resources/service-cost/index.html');
+  for (const t of ['solo', 'employee', 'owner']) assert.match(cost, new RegExp(`name="businessType" value="${t}"`), `service-cost: ${t}`);
+});
+
+const fieldOf = (html, name) => one(html, new RegExp(`(<div class="calc-field"[^>]*>(?:(?!<div class="calc-field").)*?name="${name}"[^>]*>)`, 's'));
+const wrapperOf = (html, name) => one(fieldOf(html, name) || '', /^(<div class="calc-field"[^>]*>)/);
+
+test('rent: a "Monthly rent" input on all five calculators, for solo providers and owners only (employees never see it)', () => {
+  for (const c of CALCS) {
+    const html = read(`resources/${c}/index.html`);
+    assert.match(html, /<span class="calc-label">Monthly rent<\/span>/, `${c}: no Monthly rent field`);
+    for (const name of ['monthlyRent', 'hoursPerMonth']) {
+      const wrap = wrapperOf(html, name);
+      // break-even and hourly-rate add rent whole (monthly, or × 12), so only they have no hours field
+      if (!wrap) { assert.equal(name, 'hoursPerMonth', `${c}: ${name} missing`); assert.ok(['break-even', 'hourly-rate'].includes(c), `${c}: hours missing`); continue; }
+      const types = one(wrap, /data-types="([^"]*)"/);
+      assert.deepEqual(types?.split(' ').sort(), ['owner', 'solo'], `${c} ${name}: must be solo/owner only, got ${types}`);
+    }
+    // rent is never mixed into the other-expense fields: their hints say so
+    for (const name of ['monthlyFixed', 'monthlyVariable', 'annualExpenses', 'fixedCosts', 'overhead']) {
+      const f = fieldOf(html, name);
+      if (f) assert.match(one(html, new RegExp(`id="f-${name}-hint">([^<]*)<`)), /not rent/, `${c} ${name}: hint must say "not rent"`);
+    }
+  }
+  const hours = fieldOf(read('resources/service-pricing/index.html'), 'hoursPerMonth');
+  assert.match(hours, /value="160"/);
+  assert.match(read('resources/service-pricing/index.html'), /id="f-hoursPerMonth-hint">Defaults to 160/);
+  assert.doesNotMatch(read('resources/break-even/index.html'), /name="hoursPerMonth"/, 'break-even adds rent whole: no hours field');
+});
+
+test('service pricing: profit margin defaults to 30% and the page rejects anything below it with the exact message', () => {
+  const f = fieldOf(read('resources/service-pricing/index.html'), 'profitMargin');
+  assert.match(f, /value="30"/);
+  assert.match(f, /data-min="30"/);
+  assert.match(f, /data-min-message="Enter a profit margin of at least 30%\."/);
+  assert.match(f, /data-required/);
+});
+
+test('hourly rate: employee pay types, each field shown only for its pay type; employees get no rent or expenses', () => {
+  const html = read('resources/hourly-rate/index.html');
+  const pay = one(html, /(<fieldset class="calc-type calc-choice"[^>]*>.*?<\/fieldset>)/s);
+  assert.match(pay, /data-types="employee"/);
+  assert.deepEqual([...pay.matchAll(/name="payType" value="(\w+)"/g)].map((m) => m[1]), ['hourly', 'commission', 'mixed']);
+  assert.match(pay, /value="hourly" checked/);
+  assert.match(pay, /Hourly \+ commission/);
+  assert.equal(one(wrapperOf(html, 'baseHourlyWage'), /data-when="([^"]*)"/), 'payType:mixed');
+  assert.equal(one(wrapperOf(html, 'commissionRate'), /data-when="([^"]*)"/), 'payType:commission mixed');
+  for (const n of ['baseHourlyWage', 'commissionRate', 'monthlyTips']) assert.match(wrapperOf(html, n), /data-types="employee"/, n);
+  assert.doesNotMatch(wrapperOf(html, 'monthlyTips'), /data-when/, 'tips apply to every pay type');
+  for (const n of ['monthlyRent', 'annualExpenses']) assert.doesNotMatch(wrapperOf(html, n), /employee/, `${n} must not show for employees`);
+  assert.match(fieldOf(html, 'commissionRate'), /data-min-exclusive/, '0% commission is rejected on the page too');
+  assert.match(html, /take-home/);
 });
 
 test('hub: hero, audience selector, four categories, 5 live calculators and 5 unlinked coming-soon cards', () => {

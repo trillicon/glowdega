@@ -1,6 +1,6 @@
 // Input validation shared by every calculator. Pure: no DOM access.
 // A rule describes one field: { name: 'a service price', unit: 'money'|'percent'|'minutes'|'hours'|'number',
-//   required, min (default 0), minExclusive, max, maxExclusive, integer }.
+//   required, min (default 0), minExclusive, minMessage (replaces the generic below-minimum message), max, maxExclusive, integer }.
 import { isFiniteNumber } from './money.js';
 
 const show = (v, unit) => (unit === 'money' ? `$${v.toLocaleString('en-US')}` : unit === 'percent' ? `${v}%` : v.toLocaleString('en-US'));
@@ -17,12 +17,14 @@ export function parseNumber(raw, rule = {}) {
   const s = String(raw ?? '').trim().replace(/[\s,$%]/g, '');
   if (s === '') {
     if (!rule.required) return { ok: true, value: 0, blank: true };
+    if (rule.minMessage) return { ok: false, error: rule.minMessage };
     return { ok: false, error: rule.minExclusive ? `Enter ${name} greater than ${show(min, unit)}.` : `Enter ${name}.` };
   }
   if (!NUMERIC.test(s)) return { ok: false, error: `Enter ${name} as a number, using digits only.` };
   const value = Number(s);
   if (!isFiniteNumber(value)) return { ok: false, error: `Enter ${name} as a number, using digits only.` };
   if (rule.minExclusive ? value <= min : value < min) {
+    if (rule.minMessage) return { ok: false, error: rule.minMessage };
     return { ok: false, error: rule.minExclusive ? `Enter ${name} greater than ${show(min, unit)}.` : `Enter ${name} of ${show(min, unit)} or more.` };
   }
   if (isFiniteNumber(rule.max) && (rule.maxExclusive ? value >= rule.max : value > rule.max)) {

@@ -1,6 +1,6 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculateServiceProfitability } from '../core/profit.js';
-import { formatMoney as money, describeProfit } from '../core/money.js';
+import { formatMoney as money, describeProfit, formatNumber } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
 
 mountCalculator({
@@ -9,6 +9,7 @@ mountCalculator({
     const owner = type === 'owner';
     const r = calculateServiceProfitability({
       price: v.price, durationMinutes: v.durationMinutes, productCost: v.productCost, supplyCost: v.supplyCost, overhead: v.overhead,
+      monthlyRent: v.monthlyRent, hoursPerMonth: v.hoursPerMonth,
       processingRate: toRate(v.processingRate), laborCost: owner ? v.laborCost : 0, commissionRate: owner ? toRate(v.commissionRate) : 0,
       targetHourly: v.targetHourly,
     });
@@ -26,6 +27,8 @@ mountCalculator({
     const cards = [
       { label: 'Revenue', value: money(r.revenue) },
       { label: 'Total cost', value: money(r.totalCost, { cents: true }) },
+      { label: 'Rent for this service', value: money(r.rentShare, { cents: true }),
+        note: r.rentShare > 0 ? `${money(r.rentPerHour, { cents: true })}/hour × ${formatNumber(r.hours, 2)} ${r.hours === 1 ? 'hour' : 'hours'}` : 'No rent entered' },
       { label: 'Profit margin', value: p.loss ? `${formatPercent(-r.margin)} loss` : formatPercent(r.margin), loss: p.loss },
       { label: owner ? 'Profit per hour' : 'Your earnings per hour', value: ph.loss ? `Loss of ${money(ph.amount)}/hour` : `${money(r.profitPerHour)}/hour`, loss: ph.loss },
       { label: 'Revenue per hour', value: `${money(r.revenuePerHour)}/hour` },
@@ -33,7 +36,10 @@ mountCalculator({
     if (r.targetHourly > 0) cards.push({ label: 'Target hourly rate', value: `${money(r.targetHourly)}/hour`,
       note: r.hourlyGap > 0.005 ? `${money(r.hourlyGap)}/hour short` : 'Met' });
     const method = [
-      `Costs: ${money(v.productCost, { cents: true })} product + ${money(v.supplyCost, { cents: true })} supplies + ${money(v.overhead, { cents: true })} overhead + ${money(r.processing, { cents: true })} card processing (${formatPercent(toRate(v.processingRate), 1)} of the price)` +
+      r.rentShare > 0
+        ? `Rent for this service: ${money(v.monthlyRent)} rent ÷ ${formatNumber(v.hoursPerMonth)} hours worked a month = ${money(r.rentPerHour, { cents: true })}/hour × ${formatNumber(r.hours, 2)} ${r.hours === 1 ? 'hour' : 'hours'} = ${money(r.rentShare, { cents: true })}.`
+        : 'No rent was entered, so no rent is added.',
+      `Costs: ${money(v.productCost, { cents: true })} product + ${money(v.supplyCost, { cents: true })} supplies + ${money(r.rentShare, { cents: true })} rent + ${money(v.overhead, { cents: true })} other overhead + ${money(r.processing, { cents: true })} card processing (${formatPercent(toRate(v.processingRate), 1)} of the price)` +
         (owner ? ` + ${money(v.laborCost, { cents: true })} labor + ${money(r.commission, { cents: true })} commission (${formatPercent(toRate(v.commissionRate), 1)})` : '') + ` = ${money(r.totalCost, { cents: true })}.`,
       `${p.word} = ${money(r.revenue, { cents: true })} price − ${money(r.totalCost, { cents: true })} costs.`,
       `Per hour = ${p.word.toLowerCase()} ÷ ${r.hours.toLocaleString('en-US', { maximumFractionDigits: 2 })} hours.`,
@@ -41,6 +47,8 @@ mountCalculator({
     ];
     const pricing = new URLSearchParams({ currentPrice: String(v.price), durationMinutes: String(v.durationMinutes), productCost: r.consumables.toFixed(2), type });
     if (v.targetHourly > 0) pricing.set('targetHourly', String(v.targetHourly));
+    // rent goes to its own fields in the pricing calculator, never folded into product cost
+    if (r.rentShare > 0) { pricing.set('monthlyRent', String(v.monthlyRent)); pricing.set('hoursPerMonth', String(v.hoursPerMonth)); }
     return {
       ok: true, raw: r,
       view: {

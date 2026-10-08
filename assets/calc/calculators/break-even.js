@@ -50,7 +50,7 @@ mountCalculator({
   unsupportedTypes: ['employee'],
   compute({ values: v }) {
     const r = calculateBreakEven({
-      fixedCosts: v.fixedCosts, servicePrice: v.servicePrice, variableCost: v.variableCost, processingRate: toRate(v.processingRate),
+      fixedCosts: v.fixedCosts, monthlyRent: v.monthlyRent, servicePrice: v.servicePrice, variableCost: v.variableCost, processingRate: toRate(v.processingRate),
       retailRevenue: v.retailRevenue, retailCostRate: toRate(v.retailCostRate), workingDaysPerWeek: v.workingDaysPerWeek,
     });
     if (!r.ok) return r;
@@ -58,7 +58,8 @@ mountCalculator({
     const method = [
       `Net price after card processing: ${money(v.servicePrice, { cents: true })} × (1 − ${formatPercent(toRate(v.processingRate), 1)}) = ${money(r.netPrice, { cents: true })}.`,
       `Contribution per appointment: net price − ${money(v.variableCost, { cents: true })} variable cost` + (v.retailRevenue > 0 ? ' + retail after its product cost and processing' : '') + ` = ${contribution.loss ? '−' : ''}${money(contribution.amount, { cents: true })}.`,
-      'Break-even appointments = monthly fixed costs ÷ contribution per appointment.',
+      `Monthly fixed costs: ${money(r.rent)} rent + ${money(r.otherFixedCosts)} other fixed costs = ${money(r.fixedCosts)}.`,
+      'Break-even appointments = monthly fixed costs (rent included) ÷ contribution per appointment.',
       'Break-even revenue = break-even appointments × average ticket (service price' + (v.retailRevenue > 0 ? ' + retail' : '') + ').',
       `Weekly = monthly ÷ 4.33 weeks; daily = weekly ÷ ${formatNumber(v.workingDaysPerWeek)} working days.`,
     ];
@@ -68,7 +69,7 @@ mountCalculator({
         view: {
           primary: { value: 'Not possible', label: 'Break-even at these prices', loss: true },
           insight: 'Your current price does not cover the variable cost of this service. Increase the price or reduce the service cost before calculating break-even.',
-          cards: [{ label: r.reason === 'zero' ? 'Contribution per appointment' : 'Loss per appointment (before fixed costs)', value: money(contribution.amount, { cents: true }), loss: r.reason !== 'zero' }],
+          cards: [{ label: 'Monthly fixed costs', value: money(r.fixedCosts), note: `${money(r.rent)} rent + ${money(r.otherFixedCosts)} other` }, { label: r.reason === 'zero' ? 'Contribution per appointment' : 'Loss per appointment (before fixed costs)', value: money(contribution.amount, { cents: true }), loss: r.reason !== 'zero' }],
           method,
           share: { value: 'Not yet', label: 'Break-even', insight: 'Prices need to cover costs before a business can break even.' },
         },
@@ -76,7 +77,7 @@ mountCalculator({
     }
     const insight = r.fixedCosts === 0
       ? 'With no fixed costs, every appointment that covers its own costs is already profitable.'
-      : `You need about ${formatNumber(r.appointmentsWhole, 0)} appointments a month, roughly ${formatNumber(r.dailyAppointments, 1)} a day, to cover your fixed costs.`;
+      : `You need about ${formatNumber(r.appointmentsWhole, 0)} appointments a month, roughly ${formatNumber(r.dailyAppointments, 1)} a day, to cover your rent and other fixed costs.`;
     return {
       ok: true, raw: r,
       view: {
@@ -86,6 +87,7 @@ mountCalculator({
           { label: 'Appointments a week', value: formatNumber(r.weeklyAppointments, 1) },
           { label: 'Appointments a day', value: formatNumber(r.dailyAppointments, 1) },
           { label: 'Contribution per appointment', value: money(r.contribution, { cents: true }), note: `${formatPercent(r.contributionMargin)} of each ticket` },
+          { label: 'Monthly fixed costs', value: money(r.fixedCosts), note: `${money(r.rent)} rent + ${money(r.otherFixedCosts)} other` },
         ],
         insight, method,
         extraNode: r.fixedCosts > 0 ? chartNode(r) : null,

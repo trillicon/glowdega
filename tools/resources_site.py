@@ -45,9 +45,25 @@ MORE = ['Pricing Guides', 'Business Templates', 'Marketing Tools']
 
 # ---------- field helpers ----------
 def F(key, label, unit, name, required=False, min_exclusive=False, max=None, max_exclusive=False, placeholder='',
-      value='', hint='', types=None, labels=None):
+      value='', hint='', types=None, labels=None, min=None, min_message='', when=''):
     return dict(key=key, label=label, unit=unit, name=name, required=required, min_exclusive=min_exclusive, max=max,
-                max_exclusive=max_exclusive, placeholder=placeholder, value=value, hint=hint, types=types, labels=labels or {})
+                max_exclusive=max_exclusive, placeholder=placeholder, value=value, hint=hint, types=types, labels=labels or {},
+                min=min, min_message=min_message, when=when)
+
+def CHOICE(key, legend, options, types=None, value=None):
+    """A radio group other fields can depend on (F(..., when='key:value other')). options: [(value, label)]."""
+    return dict(kind='choice', key=key, legend=legend, options=options, types=types, value=value or options[0][0])
+
+# Rent is its own input, shared across the hours worked: rent ÷ hours per month × service hours.
+HOURS_DEFAULT = '160'
+# Employees never see rent: the business pays it. Both fields are always limited to solo providers and owners.
+def RENT(hint='Rent or suite fee for your room or space. It is shared across the hours you work, so longer services carry more of it.'):
+    return F('monthlyRent', 'Monthly rent', 'money', 'monthly rent', max=MONEY_MAX, placeholder='2,000', hint=hint, types=['solo', 'owner'])
+def HOURS():
+    return F('hoursPerMonth', 'Hours you work per month', 'hours', 'the hours you work per month', required=True,
+             min_exclusive=True, max=744, value=HOURS_DEFAULT,
+             hint='Defaults to 160 (40 hours × 4 weeks). Rent is divided by these hours, then multiplied by the service length.',
+             types=['solo', 'owner'])
 
 def PCT(key, label, name, **kw):
     return F(key, label, 'percent', name, max=100, max_exclusive=True, **kw)
@@ -63,14 +79,16 @@ PAGES = {
         intro=['Most beauty pros set prices by looking at the studio down the street. That number knows nothing about your '
                'rent, your product costs, or how long your signature facial really takes. This calculator works from your '
                'numbers instead, and gives you a recommended price and range for a single service.',
-               'It is built for solo estheticians, lash and brow artists, hairstylists and nail techs who run their own book, and for '
+               'It is built for solo estheticians, lash and brow artists and other beauty pros who run their own book, and for '
                'owners pricing a menu that other providers perform. You need the service length, what the products and '
-               'supplies cost each time, and what an hour of your time should earn. For a truer price, open “Customize your '
-               'calculation” and add monthly expenses, card processing fees, a profit margin and the hours you spend on '
-               'admin and cleaning.',
-               'The result shows the lowest price that covers your costs (break-even), the recommended price that also pays '
-               'your time and margin, and how your current price compares. Treat it as a starting point for your own '
-               'decision: local demand, your experience and the results you deliver still matter.'],
+               'supplies cost each time, your monthly rent and what an hour of your time should earn. Rent is shared by the '
+               'hour: a 90-minute facial in a $2,000-a-month suite, worked 160 hours a month, carries $18.75 of rent. Under '
+               '“Customize your calculation” you can change those hours and add other expenses, card processing fees and '
+               'the time you spend on admin and cleaning.',
+               'Every recommended price keeps a profit margin of at least 30%, so the business earns something after costs '
+               'and pay. The result shows the lowest price that covers your costs (break-even), the recommended price that '
+               'also pays your time and margin, and how your current price compares. Treat it as a starting point: local '
+               'demand, your experience and your results still matter.'],
         types=['solo', 'employee', 'owner'], unsupported=['employee'],
         type_notes={'employee': 'Service prices are usually set by the business you work for. To see what your own time '
                     'needs to earn, use <a href="../hourly-rate/?type=employee">What Is Your Time Worth?</a> A Profit &amp; '
@@ -81,18 +99,21 @@ PAGES = {
                  max=1440, placeholder='60', hint='Including set-up and consultation time.'),
                F('productCost', 'Product/supply cost', 'money', 'a product/supply cost', max=MONEY_MAX, placeholder='12.50',
                  hint='Per service. Not sure? Add it up with the <a href="../service-cost/">Cost Per Service Calculator</a>.'),
+               RENT(),
                F('targetHourly', 'Target hourly earnings', 'money', 'target hourly earnings', required=True, max=MONEY_MAX,
                  placeholder='45', hint='What an hour of the provider’s time should earn, before tax.',
                  labels={'owner': 'Labor cost per hour'})],
-        advanced=[F('monthlyFixed', 'Monthly fixed expenses', 'money', 'monthly fixed expenses', max=MONEY_MAX, placeholder='2,400',
-                    hint='Rent or suite fee, insurance, software, licences.'),
-                  F('monthlyVariable', 'Monthly variable expenses', 'money', 'monthly variable expenses', max=MONEY_MAX,
-                    placeholder='300', hint='Costs that rise and fall with how busy you are: laundry, marketing, backbar top-ups.'),
+        advanced=[HOURS(),
+                  F('monthlyFixed', 'Other monthly fixed expenses', 'money', 'other monthly fixed expenses', max=MONEY_MAX, placeholder='400',
+                    hint='Other expenses (not rent): insurance, software, licences.'),
+                  F('monthlyVariable', 'Other monthly variable expenses', 'money', 'other monthly variable expenses', max=MONEY_MAX,
+                    placeholder='300', hint='Other expenses (not rent) that rise and fall with how busy you are: laundry, marketing, backbar top-ups.'),
                   F('monthlyAppointments', 'Monthly service appointments', 'number', 'monthly appointments', max=100000,
-                    placeholder='80', hint='All appointments across your menu, so expenses are shared fairly.'),
+                    placeholder='80', hint='All appointments across your menu, so other expenses are shared fairly.'),
                   PCT('processingRate', 'Payment processing', 'a payment processing rate', placeholder='2.9'),
-                  PCT('profitMargin', 'Desired profit margin', 'a profit margin', placeholder='15',
-                      hint='Profit kept by the business after costs and pay, as a share of the price.'),
+                  PCT('profitMargin', 'Desired profit margin', 'a profit margin', required=True, min=30, value='30',
+                      min_message='Enter a profit margin of at least 30%.',
+                      hint='Profit kept by the business after costs and pay, as a share of the price. 30% is the minimum; you can set it higher.'),
                   F('nonClientHours', 'Non-client working hours per month', 'hours', 'non-client hours', max=744,
                     placeholder='20', hint='Admin, cleaning, ordering and content: time you work without a client.')],
         crumb_cat='Pricing'),
@@ -103,22 +124,32 @@ PAGES = {
         intro=['An esthetician who books six hours of facials a day still works eight: there are towels to fold, products to '
                'order, messages to answer and content to post. Those hours earn nothing on their own, so the hours you '
                'spend with clients have to carry them. This calculator shows how much.',
-               'It works for solo providers and owners who set their own prices, and for employees who want to see what '
-               'their commission, wages and tips need to add up to. Start with the income you want to keep, your yearly '
-               'business expenses and an estimated tax rate. Under “Customize your calculation” you can change the weeks, '
-               'days and hours you work and how many of those hours are spent away from clients.',
-               'The result is the revenue you need each year, each month, per working hour and per client hour, plus what '
-               'a typical service of your chosen length should bring in before product costs. Use it to sense-check your '
-               'prices, or as the target hourly figure in the Service Pricing Calculator. The tax rate is a rough estimate, '
-               'not tax advice.'],
+               'Solo providers and owners start with the income they want to keep, their monthly rent, other yearly business '
+               'expenses and an estimated tax rate. Employees skip rent and expenses: choose whether you are paid hourly, on '
+               'commission, or hourly plus commission, and add your average monthly tips, which count toward your take-home '
+               'goal. Under “Customize your calculation” you can change the weeks, days and hours you work and how many of '
+               'those hours are spent away from clients.',
+               'Solo providers and owners see the revenue needed each year, each month, per working hour and per client hour, '
+               'plus what a facial or peel of your chosen length should bring in. Employees see the hourly wage, or the '
+               'monthly, weekly and per-client-hour service sales, that reach their take-home pay goal. The tax rate is a '
+               'rough estimate, not tax advice.'],
         types=['solo', 'employee', 'owner'], unsupported=[],
-        type_notes={'employee': 'As an employee you don’t pay the business’s expenses, so this shows what your wages, '
-                    'commission and tips together need to earn you before tax.'},
+        type_notes={'employee': 'As an employee you don’t pay rent or the business’s expenses. Choose how you are paid, '
+                    'and this shows the wage or service sales that reach your take-home pay goal.'},
         basic=[F('desiredAnnualIncome', 'Desired annual take-home income', 'money', 'a desired annual income', required=True,
                  min_exclusive=True, max=100_000_000, placeholder='65,000', hint='What you want to keep after estimated income tax.',
                  labels={'employee': 'Desired annual take-home pay'}),
-               F('annualExpenses', 'Annual business expenses', 'money', 'annual business expenses', max=100_000_000,
-                 placeholder='18,000', hint='Rent, products, insurance, software, education: everything the business pays for in a year.',
+               CHOICE('payType', 'How are you paid?', [('hourly', 'Hourly'), ('commission', 'Commission'), ('mixed', 'Hourly + commission')],
+                      types=['employee']),
+               F('baseHourlyWage', 'Base hourly wage', 'money', 'a base hourly wage', required=True, max=MONEY_MAX, placeholder='18',
+                 hint='Your base pay per hour, before commission and tips.', types=['employee'], when='payType:mixed'),
+               PCT('commissionRate', 'Commission rate', 'a commission rate', required=True, min_exclusive=True, placeholder='40',
+                   hint='Your share of the service price you perform.', types=['employee'], when='payType:commission mixed'),
+               F('monthlyTips', 'Average monthly tips', 'money', 'monthly tips', max=MONEY_MAX, placeholder='400',
+                 hint='Before tax. Tips count toward your take-home goal and are taxed like pay.', types=['employee']),
+               RENT(hint='Rent or suite fee. It is counted 12 times a year on top of your other expenses.'),
+               F('annualExpenses', 'Other annual business expenses', 'money', 'other annual business expenses', max=100_000_000,
+                 placeholder='6,000', hint='Other expenses (not rent): products, insurance, software, education.',
                  types=['solo', 'owner']),
                PCT('taxRate', 'Estimated tax rate', 'an estimated tax rate', placeholder='25',
                    hint='A rough combined rate. A tax professional can give you yours.')],
@@ -140,15 +171,21 @@ PAGES = {
         intro=['A chemical peel looks cheap to deliver until you count everything that goes into it: the prep solution, the '
                'peel itself, neutraliser, gauze, gloves, the disposable headband and the SPF you finish with. Small costs '
                'add up, and they come out of every single appointment.',
-               'This calculator is for anyone who performs services: estheticians, lash and brow artists, hairstylists, nail '
-               'techs and owners costing a menu. Add one line per item. Choose whether it is a product (cleanser, enzyme '
+               'This calculator is for anyone who performs services: estheticians, lash and brow artists and owners costing '
+               'a menu. Add one line per item. Choose whether it is a product (cleanser, enzyme '
                'mask, lash adhesive, color, developer), a supply (gloves, cotton, foils, applicators) or another consumable '
                '(laundry, single-use linens), then enter how much one service uses and what that amount costs. For a bottle '
-               'you buy in bulk, the unit cost is the bottle price divided by the number of services it covers.',
-               'You get the total product cost, the total supply cost and the true consumable cost per service. Send that '
-               'number straight into the Service Pricing Calculator to find a price that covers it, along with your time, '
-               'overhead and profit.'],
-        types=[], unsupported=[], type_notes={}, basic=[], advanced=[], rows=True, crumb_cat='Pricing'),
+               'you buy in bulk, the unit cost is the bottle price divided by the number of services it covers. Solo providers '
+               'and owners can add monthly rent and the service length too: a 90-minute facial in a $2,000-a-month room worked '
+               '160 hours a month carries $18.75 of rent.',
+               'You get the product cost, supply cost, rent share and the true cost per service. Send them straight into the '
+               'Service Pricing Calculator to find a price that covers them, along with your time and profit.'],
+        types=['solo', 'employee', 'owner'], unsupported=[],
+        type_notes={'employee': 'Rent is paid by the business you work for, so only products and supplies are counted.'},
+        basic=[F('durationMinutes', 'Service duration', 'minutes', 'a service duration', max=1440, placeholder='90',
+                 hint='Including set-up and consultation. Needed to share rent by the time a service takes.', types=['solo', 'owner']),
+               RENT()],
+        advanced=[HOURS()], rows=True, crumb_cat='Pricing'),
     'service-profitability': dict(
         title='Service Profitability Calculator for Beauty Pros | GLOWDEGA', h1='Service Profitability Calculator',
         desc='See what one beauty service really earns per appointment and per hour after products, overhead, card fees '
@@ -157,9 +194,9 @@ PAGES = {
                '30-minute brow lamination might both be on your menu at $120, but one uses three times the room time and far '
                'more product. This calculator shows what a single service earns once its costs are paid.',
                'It is built for solo providers checking their own menu and for owners whose services are performed by staff '
-               'on wages or commission. Enter the price, how long the service takes and what the products and supplies '
-               'cost. Under “Customize your calculation” you can add overhead per appointment, card processing, labor and '
-               'commission, and a target hourly rate to compare against.',
+               'on wages or commission. Enter the price, how long the service takes, what the products and supplies cost and '
+               'your monthly rent, which each service carries by the hour. Under “Customize your calculation” you can change '
+               'the hours you work per month and add other overhead, card processing, labor, commission and a target hourly rate.',
                'The result shows revenue, total cost, profit or loss per appointment, profit margin, and profit and revenue '
                'per hour. If the service falls short of your target, the next step is the Service Pricing Calculator, which '
                'works out a price that meets it. Results are estimates to inform your decisions, not financial advice.'],
@@ -170,9 +207,11 @@ PAGES = {
                F('durationMinutes', 'Service duration', 'minutes', 'a service duration', required=True, min_exclusive=True,
                  max=1440, placeholder='75'),
                F('productCost', 'Product cost', 'money', 'a product cost', max=MONEY_MAX, placeholder='9'),
-               F('supplyCost', 'Supply cost', 'money', 'a supply cost', max=MONEY_MAX, placeholder='3.50')],
-        advanced=[F('overhead', 'Allocated overhead per appointment', 'money', 'allocated overhead', max=MONEY_MAX, placeholder='22',
-                    hint='Monthly expenses ÷ monthly appointments.'),
+               F('supplyCost', 'Supply cost', 'money', 'a supply cost', max=MONEY_MAX, placeholder='3.50'),
+               RENT()],
+        advanced=[HOURS(),
+                  F('overhead', 'Other overhead per appointment', 'money', 'other overhead', max=MONEY_MAX, placeholder='8',
+                    hint='Other monthly expenses (not rent) ÷ monthly appointments.'),
                   PCT('processingRate', 'Payment processing', 'a payment processing rate', placeholder='2.9'),
                   F('laborCost', 'Labor cost for this service', 'money', 'a labor cost', max=MONEY_MAX, placeholder='30',
                     hint='Wages paid to the provider for the time this service takes.', types=['owner']),
@@ -189,7 +228,7 @@ PAGES = {
                'appointments that covers those fixed costs. Below it you are paying to open the doors; above it, every '
                'appointment adds profit.',
                'This calculator is for solo providers renting a room or suite and for owners of a salon, spa or studio. '
-               'You need your monthly fixed costs (rent, insurance, software, loan payments, salaried staff), your average '
+               'You need your monthly rent, your other fixed costs (insurance, software, loan payments, salaried staff), your average '
                'service price, the average variable cost of one appointment (products, supplies, commission) and your card '
                'processing rate. Under “Customize your calculation” you can add average retail sales per appointment and '
                'the days you work each week.',
@@ -199,8 +238,9 @@ PAGES = {
         types=['solo', 'employee', 'owner'], unsupported=['employee'],
         type_notes={'employee': 'Break-even is a business-owner number. To see what your own time needs to earn, use '
                     '<a href="../hourly-rate/?type=employee">What Is Your Time Worth?</a>'},
-        basic=[F('fixedCosts', 'Monthly fixed costs', 'money', 'monthly fixed costs', required=True, max=MONEY_MAX, placeholder='3,200',
-                 hint='Rent, insurance, software, loan payments, salaried staff.'),
+        basic=[RENT(hint='Rent or suite fee for the month. It is added to your other fixed costs.'),
+               F('fixedCosts', 'Other monthly fixed costs', 'money', 'other monthly fixed costs', max=MONEY_MAX, placeholder='1,200',
+                 hint='Other fixed costs (not rent): insurance, software, loan payments, salaried staff.'),
                F('servicePrice', 'Average service price', 'money', 'an average service price', required=True, min_exclusive=True,
                  max=MONEY_MAX, placeholder='110'),
                F('variableCost', 'Average variable cost per service', 'money', 'a variable cost', max=MONEY_MAX, placeholder='18',
@@ -215,13 +255,23 @@ PAGES = {
 }
 
 # ---------- rendering ----------
+def choice_html(c):
+    types = f' data-types="{" ".join(c["types"])}"' if c['types'] else ''
+    return (f'<fieldset class="calc-type calc-choice"{types}><legend>{esc(c["legend"])}</legend><div class="calc-type__options">'
+            + ''.join(f'<label><input type="radio" name="{c["key"]}" value="{v}"{" checked" if v == c["value"] else ""}><span>{esc(l)}</span></label>'
+                      for v, l in c['options'])
+            + '</div></fieldset>')
+
 def field_html(f):
+    if f.get('kind') == 'choice': return choice_html(f)
     pre, suf = AFFIX[f['unit']]
     fid = 'f-' + f['key']
     attrs = [f'id="{fid}"', f'name="{f["key"]}"', 'type="text"', 'inputmode="decimal"', 'autocomplete="off"',
              f'data-name="{esc(f["name"])}"', f'data-unit="{f["unit"]}"']
     if f['required']: attrs.append('data-required aria-required="true"')
+    if f['min'] is not None: attrs.append(f'data-min="{f["min"]}"')
     if f['min_exclusive']: attrs.append('data-min-exclusive')
+    if f['min_message']: attrs.append(f'data-min-message="{esc(f["min_message"])}"')
     if f['max'] is not None: attrs.append(f'data-max="{f["max"]}"')
     if f['max_exclusive']: attrs.append('data-max-exclusive')
     if f['placeholder']: attrs.append(f'placeholder="{esc(f["placeholder"])}"')
@@ -231,6 +281,7 @@ def field_html(f):
     labels = ''.join(f' data-label-{t}="{esc(v)}"' for t, v in f['labels'].items())
     opt = '' if f['required'] else ' <span class="calc-optional">optional</span>'
     types = f' data-types="{" ".join(f["types"])}"' if f['types'] else ''
+    if f['when']: types += f' data-when="{esc(f["when"])}"'
     return (f'<div class="calc-field"{types}><label for="{fid}"><span class="calc-label"{labels}>{esc(f["label"])}</span>{opt}</label>'
             f'<div class="calc-input">' + (f'<span class="calc-affix" aria-hidden="true">{pre}</span>' if pre else '')
             + f'<input {" ".join(attrs)}>' + (f'<span class="calc-affix calc-affix--end" aria-hidden="true">{suf}</span>' if suf else '')
@@ -272,13 +323,13 @@ def calculator_main(slug, p, script):
                  + ''.join(f'<label><input type="radio" name="businessType" value="{t}"><span>{TYPE_NAMES[t]}</span></label>' for t in p['types'])
                  + '</div></fieldset>'
                  + ''.join(f'<div class="calc-type-note" data-for-type="{t}" hidden><p>{n}</p></div>' for t, n in p['type_notes'].items()))
+    rows = ''
     if p.get('rows'):
-        fields = ('<div class="calc-rows" role="group" aria-label="Products and supplies"></div>'
-                  '<p><button type="button" class="calc-add" data-action="add-row">+ Add an item</button></p>' + ROW_TEMPLATE)
-    else:
-        fields = (''.join(field_html(f) for f in p['basic'])
-                  + (('<details class="calc-advanced"><summary>Customize your calculation</summary><div class="calc-advanced__body">'
-                      + ''.join(field_html(f) for f in p['advanced']) + '</div></details>') if p['advanced'] else ''))
+        rows = ('<div class="calc-rows" role="group" aria-label="Products and supplies"></div>'
+                '<p><button type="button" class="calc-add" data-action="add-row">+ Add an item</button></p>' + ROW_TEMPLATE)
+    fields = (rows + ''.join(field_html(f) for f in p['basic'])
+              + (('<details class="calc-advanced"><summary>Customize your calculation</summary><div class="calc-advanced__body">'
+                  + ''.join(field_html(f) for f in p['advanced']) + '</div></details>') if p['advanced'] else ''))
     intro = ''.join(f'<p>{x}</p>' for x in p['intro'])
     return (f'<section class="calc-page"><nav class="eyebrow calc-crumbs" aria-label="Breadcrumb"><a href="../../index.html">GLOWDEGA®</a> / '
             f'<a href="../">Resources</a> / <span aria-current="page">{esc(p["crumb_cat"])}</span></nav>'

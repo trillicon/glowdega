@@ -1,5 +1,5 @@
 import { mountCalculator } from '../ui/framework.js';
-import { calculateConsumableCost } from '../core/costs.js';
+import { calculateServiceCost } from '../core/costs.js';
 import { parseNumber } from '../core/validation.js';
 import { formatMoney as money, formatNumber } from '../core/money.js';
 import { formatPercent } from '../core/percentages.js';
@@ -63,31 +63,52 @@ mountCalculator({
       recalc();
     });
   },
-  compute({ values: v }) {
-    const r = calculateConsumableCost(v.items);
+  compute({ values: v, type }) {
+    const employee = type === 'employee'; // the business pays the rent: employees see products and supplies only
+    const r = calculateServiceCost({ items: v.items, monthlyRent: employee ? 0 : v.monthlyRent,
+      hoursPerMonth: employee ? undefined : v.hoursPerMonth, durationMinutes: employee ? 0 : v.durationMinutes });
     if (!r.ok) return r;
-    if (!(r.totalCost > 0)) return { ok: false, errors: { _: 'Add at least one item with a cost to see your total.' } };
+    if (!(r.trueCost > 0)) return { ok: false, errors: { _: 'Add at least one item with a cost to see your total.' } };
+    const hasRent = r.rentShare > 0;
     const top = r.largestIndex;
-    const insight = v.items.length > 1
-      ? `${v.meta[top].name} is the biggest cost in this service at ${money(r.lines[top], { cents: true })}, ${formatPercent(r.largestShare)} of the total.`
-      : `This service uses ${money(r.totalCost, { cents: true })} in consumables every time you perform it.`;
+    let insight = r.consumableCost > 0 && v.items.length > 1
+      ? `${v.meta[top].name} is the biggest product or supply cost in this service at ${money(r.lines[top], { cents: true })}, ${formatPercent(r.largestShare)} of products and supplies.`
+      : `This service uses ${money(r.consumableCost, { cents: true })} in products and supplies every time you perform it.`;
+    if (hasRent) insight += ` Rent adds ${money(r.rentShare, { cents: true })}, for a true cost of ${money(r.trueCost, { cents: true })}.`;
+    const cards = [
+      { label: 'Total product cost', value: money(r.productCost, { cents: true }) },
+      { label: 'Total supply cost', value: money(r.supplyCost, { cents: true }), note: r.otherCost > 0 ? `Includes ${money(r.otherCost, { cents: true })} other consumables` : 'Supplies and other consumables' },
+    ];
+    if (!employee) cards.push({ label: 'Rent share', value: money(r.rentShare, { cents: true }),
+      note: hasRent ? `${money(r.rentPerHour, { cents: true })}/hour × ${formatNumber(v.durationMinutes, 0)} minutes` : 'No rent entered' });
+    cards.push({ label: 'Items counted', value: formatNumber(r.itemCount, 0) });
+    const method = [
+      'Each line: quantity used × unit cost. For a product you buy in bulk, unit cost is the price of one use (bottle price ÷ number of uses).',
+      'Total product cost adds every “Product” line; total supply cost adds “Supplies” and “Other consumable” lines.',
+    ];
+    if (employee) {
+      method.push('True cost = product cost + supply cost. Rent is paid by the business you work for, so it is not added here.');
+    } else {
+      method.push(hasRent
+        ? `Rent share: ${money(v.monthlyRent)} rent ÷ ${formatNumber(v.hoursPerMonth)} hours worked a month = ${money(r.rentPerHour, { cents: true })}/hour, × ${formatNumber(v.durationMinutes, 0)} minutes = ${money(r.rentShare, { cents: true })}.`
+        : 'No rent was entered, so the rent share is $0.');
+      method.push('True cost = product cost + supply cost + rent share. It does not include your time, other expenses or card fees; the Service Pricing Calculator adds those.');
+    }
+    // Pricing gets each part in its own field: products and supplies as product cost, rent with its hours and duration,
+    // so nothing is counted twice.
+    const pricing = new URLSearchParams({ productCost: r.consumableCost.toFixed(2) });
+    if (!employee) {
+      if (v.durationMinutes > 0) pricing.set('durationMinutes', String(v.durationMinutes));
+      if (hasRent) { pricing.set('monthlyRent', String(v.monthlyRent)); pricing.set('hoursPerMonth', String(v.hoursPerMonth)); }
+      pricing.set('type', type);
+    }
     return {
       ok: true, raw: r,
       view: {
-        primary: { value: money(r.totalCost, { cents: true }), label: 'True consumable cost per service' },
-        cards: [
-          { label: 'Total product cost', value: money(r.productCost, { cents: true }) },
-          { label: 'Total supply cost', value: money(r.supplyCost, { cents: true }), note: r.otherCost > 0 ? `Includes ${money(r.otherCost, { cents: true })} other consumables` : 'Supplies and other consumables' },
-          { label: 'Items counted', value: formatNumber(r.itemCount, 0) },
-        ],
-        insight,
-        method: [
-          'Each line: quantity used × unit cost. For a product you buy in bulk, unit cost is the price of one use (bottle price ÷ number of uses).',
-          'Total product cost adds every “Product” line; total supply cost adds “Supplies” and “Other consumable” lines.',
-          'True consumable cost = product cost + supply cost. It does not include rent, your time or card fees; the Service Pricing Calculator adds those.',
-        ],
-        cta: { href: `../service-pricing/?productCost=${r.totalCost.toFixed(2)}`, text: 'Use this cost in the Service Pricing Calculator →' },
-        share: { value: money(r.totalCost, { cents: true }), label: 'True cost of products and supplies per service', insight: 'Every service has a cost before it has a price.' },
+        primary: { value: money(r.trueCost, { cents: true }), label: employee || !hasRent ? 'True product and supply cost per service' : 'True cost per service (products, supplies and rent)' },
+        cards, insight, method,
+        cta: { href: `../service-pricing/?${pricing}`, text: 'Use this cost in the Service Pricing Calculator →' },
+        share: { value: money(r.trueCost, { cents: true }), label: hasRent ? 'True cost per service, rent included' : 'True cost of products and supplies per service', insight: 'Every service has a cost before it has a price.' },
       },
     };
   },
