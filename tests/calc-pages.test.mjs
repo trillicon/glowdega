@@ -164,6 +164,8 @@ test('hub gate: "I’m a Licensed [4 licenses] and a [3 worker types]" sentence 
   const gate = one(html, /(<form class="hub-gate" data-hub-gate[^>]*>.*?<\/form>)/s);
   assert.ok(gate, 'no gate form');
   assert.match(text(gate).replace(/\s+/g, ' '), /I’m a Licensed .* and a /);
+  const sub = one(html, /<p class="hub-sub">(.*?)<\/p>/s);
+  for (const who of ['estheticians', 'lash and brow artists', 'hairstylists', 'barbers', 'nail techs']) assert.match(sub, new RegExp(who), `hub subheading leaves out ${who}`);
   const prof = one(gate, /(<select name="profession"[^>]*>.*?<\/select>)/s);
   const type = one(gate, /(<select name="type"[^>]*>.*?<\/select>)/s);
   assert.deepEqual(optionsOf(prof), [['', 'choose your license'], ...LICENSES]);

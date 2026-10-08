@@ -378,8 +378,8 @@ def hub_main():
             + '</ul></section>')
     return ('<div data-hub><section class="page-shell hub-hero"><div class="eyebrow">GLOWDEGA® / RESOURCES</div>'
             '<h1>Beauty Business Calculators</h1><p class="hub-lede">Free tools to help you price your services, understand your '
-            'numbers, and grow your business.</p><p class="hub-sub">Built for estheticians, lash and brow artists, hairstylists, nail '
-            'techs and studio owners. No sign-up; your numbers stay in your browser.</p>'
+            'numbers, and grow your business.</p><p class="hub-sub">Built for estheticians, lash and brow artists, hairstylists, barbers, '
+            'nail techs and studio owners. No sign-up; your numbers stay in your browser.</p>'
             + hub_gate() + '</section>'
             f'<div class="hub-body">{cats}{more}<p class="calc-disclaimer">{DISCLAIMER}</p></div></div>')
 
