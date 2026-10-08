@@ -50,11 +50,15 @@ export function requireBucket(env) {
   return env.IMAGES;
 }
 
-// Never overwrite: silk-press.jpg, then silk-press-2.jpg, silk-press-3.jpg…
+// A deleted photo leaves a marker so its name is never reused: browsers and Cloudflare may still hold the old
+// file for that link for up to a day.
+export const tombstone = (key) => key.replace(/^([a-z0-9-]+\/)/, '$1.deleted/');
+
+// Never overwrite or reuse: silk-press.jpg, then silk-press-2.jpg, silk-press-3.jpg…
 export async function freeKey(bucket, folder, base, ext) {
   for (let n = 1; n <= 200; n++) {
     const key = `${folder}${base}${n === 1 ? '' : '-' + n}.${ext}`;
-    if (!(await bucket.head(key))) return key;
+    if (!(await bucket.head(key)) && !(await bucket.head(tombstone(key)))) return key;
   }
   throw new HttpError(409, `Too many files named ${base}. Rename the file and try again.`);
 }

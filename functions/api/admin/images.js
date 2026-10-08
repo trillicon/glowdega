@@ -3,7 +3,7 @@
 //   POST  multipart   one or more "file" fields; returns the saved photos and their public URLs
 //   DELETE ?key=…     removes one photo from this environment's folder
 import { handle, json, HttpError } from '../../_lib/db.js';
-import { MAX_BYTES, MAX_FILES, sniff, prefix, baseName, isOwnKey, requireBucket, freeKey, describe } from '../../_lib/images.js';
+import { MAX_BYTES, MAX_FILES, sniff, prefix, baseName, isOwnKey, requireBucket, freeKey, describe, tombstone } from '../../_lib/images.js';
 
 export const onRequestGet = handle(async ({ env }) => {
   const bucket = requireBucket(env);
@@ -56,6 +56,7 @@ export const onRequestDelete = handle(async ({ request, env }) => {
   const key = new URL(request.url).searchParams.get('key');
   if (!isOwnKey(env, key)) throw new HttpError(400, 'That is not a photo in this library.');
   if (!(await bucket.head(key))) throw new HttpError(404, 'That photo is already gone.');
+  await bucket.put(tombstone(key), new Uint8Array(0));
   await bucket.delete(key);
   return json({ deleted: key });
 });

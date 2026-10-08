@@ -16,7 +16,7 @@ function fakeBucket(keys = []) {
   return {
     store,
     async head(k) { return store.get(k) || null; },
-    async put(k, bytes, opts) { const o = { key: k, size: bytes.length, uploaded: new Date(), httpMetadata: opts.httpMetadata }; store.set(k, o); return o; },
+    async put(k, bytes, opts = {}) { const o = { key: k, size: bytes.length, uploaded: new Date(), httpMetadata: opts.httpMetadata }; store.set(k, o); return o; },
     async delete(k) { store.delete(k); },
     async list({ prefix: p }) { return { objects: [...store.values()].filter((o) => o.key.startsWith(p)), truncated: false }; },
   };
@@ -127,4 +127,14 @@ test('admin.css keeps @import first so the font loads, and [hidden] wins over di
   const css = await readFile(new URL('../admin/admin.css', import.meta.url), 'utf8');
   assert.match(css, /^@import /);
   assert.match(css, /\[hidden\]\{display:none!important\}/);
+});
+
+test('a deleted name is never reused (cached copies of the old photo would show)', async () => {
+  const b = fakeBucket(['posts/a.jpg']);
+  const del = await onRequestDelete({ request: new Request('https://x.test/api/admin/images?key=posts%2Fa.jpg', { method: 'DELETE' }), env: env(b) });
+  assert.equal(del.status, 200);
+  const { images } = await (await onRequestPost({ request: upload([['a.jpg', JPG]]), env: env(b) })).json();
+  assert.equal(images[0].key, 'posts/a-2.jpg');
+  const list = await (await onRequestGet({ env: env(b) })).json();
+  assert.deepEqual(list.images.map((i) => i.key), ['posts/a-2.jpg'], 'markers are not listed');
 });
