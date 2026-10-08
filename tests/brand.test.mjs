@@ -43,7 +43,7 @@ test('every site header shows the official logo image with GLOWDEGA® as its tex
     const html = readFileSync(p, 'utf8');
     const logo = html.match(/<a class="logo"[^>]*>(.*?)<\/a>/s);
     if (!logo) continue;
-    if (!/<img src="[^"]*assets\/img\/brand\/glowdega-logo\.png" alt="GLOWDEGA®" width="823" height="200">/.test(logo[1])) bad.push(p.slice(ROOT.length + 1));
+    if (!/<img src="[^"]*assets\/img\/brand\/glowdega-logo\.png" alt="GLOWDEGA®" width="766" height="114">/.test(logo[1])) bad.push(p.slice(ROOT.length + 1));
   }
   assert.deepEqual(bad, []);
   assert.match(readFileSync(join(ROOT, 'assets/style.css'), 'utf8'), /\.logo img\{[^}]*height:/, 'logo image has a set height');

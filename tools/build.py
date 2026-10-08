@@ -295,7 +295,7 @@ def page(root, title, desc, main, extra_head=''):
 
 # Header and footer for every page; static pages (index, book, policies, pages/*) are synced at the end of the build.
 def header(root):
-    return (f'<header><a class="logo" href="{root}index.html"><img src="{root}assets/img/brand/glowdega-logo.png" alt="GLOWDEGA®" width="823" height="200"></a><nav class="nav">'
+    return (f'<header><a class="logo" href="{root}index.html"><img src="{root}assets/img/brand/glowdega-logo.png" alt="GLOWDEGA®" width="766" height="114"></a><nav class="nav">'
             f'<a href="{root}blog.html">The Glow Gazette</a><a href="https://www.fairyglowmother.com/">About Hadiyah</a>'
             f'<a href="{root}esthetician-directory.html">Esthetician Directory</a><a href="{root}resources/">Resources</a></nav>'
             f'<div class="right"><a class="book-pill" href="{root}book.html">GET THE BOOK</a></div></header>')
