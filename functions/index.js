@@ -1,12 +1,14 @@
-// /: the static home page, with the 12 most popular posts including any approved in /admin.
-import { asset, allPosts, livePosts, homeCards, htmlHeaders } from './_lib/posts.js';
+// /: the static home page, with its 12 cards re-ordered by the current ranking (weekly trends, see homeRanking)
+// and including any posts approved in /admin. With neither, the static page is already in the right order.
+import { asset, allPosts, livePosts, homeCards, homeRanking, htmlHeaders } from './_lib/posts.js';
 
 export async function onRequestGet({ request, env }) {
   const page = await asset(env, request, '/');
-  if (!(await livePosts(env)).length) return page;
+  const [ranking, live] = await Promise.all([homeRanking(env, request), livePosts(env)]);
+  if (ranking.source === 'static' && !live.length) return page;
 
   const posts = await allPosts(env, request);
-  const popular = await (await asset(env, request, '/assets/popular.json')).json().catch(() => []);
+  const popular = ranking.ranked;
   // "127 POSTS" in the grid header
   const count = () => ({ text(t) { if (/\d+ (POSTS|published posts)/.test(t.text)) t.replace(t.text.replace(/\d+/, String(posts.length))); } });
   return new HTMLRewriter()

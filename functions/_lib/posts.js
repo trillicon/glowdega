@@ -64,7 +64,26 @@ export function archiveMain(posts) {
     + `<nav class="archive-nav" aria-label="Jump to year">${nav}</nav></section>${groups}`;
 }
 
-// Home: most-searched first (assets/popular.json, from tools/build.py), the rest newest first; no dates.
+// Home page order: the weekly trend ranking in D1 (PUT /api/trending), else the Search Console order baked into
+// assets/popular.json by tools/build.py. Returns { ranked: [slug], source: 'trending' | 'static', ... }.
+export const HOME_RANKING = 'home_ranking';
+export const settingsTable = (db) => db.prepare(
+  'CREATE TABLE IF NOT EXISTS site_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)').run();
+
+export async function homeRanking(env, request) {
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare('SELECT value, updated_at FROM site_settings WHERE key = ?').bind(HOME_RANKING).first();
+      if (row) return { ...JSON.parse(row.value), updated_at: row.updated_at, source: 'trending' };
+    } catch (err) {
+      if (!/no such table/i.test(String(err))) console.error('homeRanking failed', err);
+    }
+  }
+  const res = await asset(env, request, '/assets/popular.json');
+  return { ranked: res.ok ? await res.json() : [], source: 'static' };
+}
+
+// Home cards: in `popular` order (see homeRanking), the rest newest first; no dates.
 export function homeCards(posts, popular = []) {
   const rank = new Map(popular.map((slug, i) => [slug, i]));
   const r = (p) => rank.get(p.slug) ?? rank.size;

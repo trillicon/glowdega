@@ -84,3 +84,12 @@ export const state = (p, now = nowIso()) =>
   p.status === 'approved' ? (p.publish_at > now ? 'scheduled' : 'published') : p.status;
 
 export { nowIso };
+
+// Bearer token check for the automation endpoints (/api/drafts, /api/trending), constant-time.
+export async function tokenMatches(given, expected) {
+  if (!expected || expected.length < 32) return false;
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([crypto.subtle.digest('SHA-256', enc.encode(given)), crypto.subtle.digest('SHA-256', enc.encode(expected))]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+

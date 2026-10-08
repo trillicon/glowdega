@@ -2,14 +2,7 @@
 // Auth: `Authorization: Bearer <DRAFTS_TOKEN>` (a Pages secret). Drafts are never published from here.
 //
 // Body (JSON): { title, body_md, excerpt?, category?, hero_image?, slug?, source? }
-import { handle, json, readJson, cleanFields, freeSlug, checkSlug, requireDb, nowIso, HttpError } from '../_lib/db.js';
-
-async function tokenMatches(given, expected) {
-  if (!expected || expected.length < 32) return false;
-  const enc = new TextEncoder();
-  const [a, b] = await Promise.all([crypto.subtle.digest('SHA-256', enc.encode(given)), crypto.subtle.digest('SHA-256', enc.encode(expected))]);
-  return crypto.subtle.timingSafeEqual(a, b);
-}
+import { handle, json, readJson, cleanFields, freeSlug, checkSlug, requireDb, nowIso, HttpError, tokenMatches } from '../_lib/db.js';
 
 export const onRequestPost = handle(async (context) => {
   const { request, env } = context;
