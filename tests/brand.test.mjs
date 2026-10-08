@@ -48,3 +48,22 @@ test('every site header shows the official logo image with GLOWDEGA® as its tex
   assert.deepEqual(bad, []);
   assert.match(readFileSync(join(ROOT, 'assets/style.css'), 'utf8'), /\.logo img\{[^}]*height:/, 'logo image has a set height');
 });
+
+test('every page has a link preview: the logo card (1200×630) with title and description, for iMessage, Facebook and X', () => {
+  assert.ok(readFileSync(join(ROOT, 'assets/img/brand/share-card.png')).length > 5000, 'share card missing');
+  const bad = [];
+  for (const p of pages) {
+    if (p.includes('/admin/')) continue;
+    const html = readFileSync(p, 'utf8');
+    const head = html.split('</head>')[0];
+    const need = [
+      /<meta property="og:image" content="https:\/\/www\.glowdega\.com\/assets\/img\/brand\/share-card\.png">/,
+      /<meta property="og:image:width" content="1200">/, /<meta property="og:image:height" content="630">/,
+      /<meta name="twitter:card" content="summary_large_image">/,
+      /<meta property="og:title" content="[^"]+">/, /<meta property="og:description" content="[^"]+">/,
+    ];
+    const missing = need.filter((re) => !re.test(head));
+    if (missing.length || (head.match(/property="og:image"/g) || []).length !== 1) bad.push(p.slice(ROOT.length + 1));
+  }
+  assert.deepEqual(bad, [], 'run tools/build.py');
+});

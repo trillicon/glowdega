@@ -519,6 +519,32 @@ for dirpath, dirnames, filenames in os.walk(SITE):
         new = new.replace('<meta charset="utf-8">', '<meta charset="utf-8">' + ICON_LINKS, 1)
         if new != doc: open(path, 'w').write(new)
 
+# ---------- link previews ----------
+# iMessage, Facebook, X and Slack read Open Graph tags. Every page (posts included, by the owner's choice) shares the
+# logo card; pages missing a title, description, type or site name get them from their own <title> and description.
+SHARE_CARD = 'https://www.glowdega.com/assets/img/brand/share-card.png'
+CARD_TAGS = (f'<meta property="og:image" content="{SHARE_CARD}"><meta property="og:image:width" content="1200">'
+             '<meta property="og:image:height" content="630"><meta property="og:image:alt" content="GLOWDEGA®">'
+             '<meta name="twitter:card" content="summary_large_image">')
+for dirpath, dirnames, filenames in os.walk(SITE):
+    dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in ('admin', 'node_modules')]
+    for fn in filenames:
+        if not fn.endswith('.html'): continue
+        path = os.path.join(dirpath, fn)
+        doc = open(path).read()
+        new = re.sub(r'<meta (?:property="og:image[^"]*"|name="twitter:card") content="[^"]*">', '', doc)
+        add = ''
+        title = re.search(r'<title>(.*?)</title>', new, re.S)
+        desc = re.search(r'<meta name="description" content="([^"]*)">', new)
+        if title and 'property="og:title"' not in new: add += f'<meta property="og:title" content="{title.group(1).strip()}">'
+        if 'property="og:description"' not in new:
+            text = desc.group(1) if desc else 'Skin health advice and free beauty business tools from the GLOWDEGA® Archive.'
+            add += f'<meta property="og:description" content="{text}">'
+        if 'property="og:type"' not in new: add += '<meta property="og:type" content="website">'
+        if 'property="og:site_name"' not in new: add += '<meta property="og:site_name" content="GLOWDEGA®">'
+        new = re.sub(r'(</title>)', lambda m: m.group(1) + add + CARD_TAGS, new, count=1) if title else new.replace('</head>', add + CARD_TAGS + '</head>', 1)
+        if new != doc: open(path, 'w').write(new)
+
 # ---------- stylesheet version ----------
 # Browsers keep assets/style.css for hours, so every page links it as style.css?v=<content hash>: a CSS change gives
 # a new address and returning visitors get it at once. Covers every page, the article template and hand-made pages.
