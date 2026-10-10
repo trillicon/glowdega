@@ -270,7 +270,7 @@ test('hourly pricing view: rate, billed price, deposit, cost breakdown and margi
   const card = (l) => solo.cards.find((c) => c.label === l)?.value;
   assert.equal(card('Price for the estimated length'), '$515.00');
   assert.equal(card('Deposit at booking'), '$128.75');
-  assert.equal(card('Profit margin'), '30.1%');
+  assert.equal(card('Profit margin'), '30%');
   for (const l of ['Billed time', 'Your pay', 'Rent', 'Products', 'Supplies', 'Other overhead', 'Card processing', 'Total cost']) assert.ok(card(l), l);
   assert.doesNotMatch(JSON.stringify(solo), /quote table|calc-table/i, 'no quote table');
   assert.doesNotMatch(JSON.stringify(solo), /\b\d+-minute\b/, 'no example lengths');

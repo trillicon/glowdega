@@ -1,7 +1,7 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculatePriceIncrease, MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { serviceText } from '../ui/professions.js';
 import { costInputs, costMethod, laborCard } from '../ui/service-costs.js';
 
@@ -52,7 +52,7 @@ export const config = mountCalculator({
     const minimum = formatPercent(MIN_PROFIT_MARGIN);
     if (describeProfit(shown.profit).loss) insight += ` At ${money(shown.price)} each appointment still loses ${money(describeProfit(shown.profit).amount, { cents: true })} once costs and labor are paid, so it is not profitable.`;
     else if (thin) insight += ` At ${money(shown.price)} it earns a profit, but its ${marginBelowText(shown.margin)} margin is below the ${minimum} minimum. The Service Pricing Calculator finds a price that keeps at least ${minimum}.`;
-    if (!describeProfit(shown.profit).loss) cards.push({ label: r.status === 'none' ? 'Profit margin' : 'Profit margin at the new price', value: formatPercent(shown.margin),
+    if (!describeProfit(shown.profit).loss) cards.push({ label: r.status === 'none' ? 'Profit margin' : 'Profit margin at the new price', value: formatMargin(shown.margin),
       note: thin ? `Below the ${minimum} minimum` : undefined });
     const method = [
       ...costMethod(v, r, type),

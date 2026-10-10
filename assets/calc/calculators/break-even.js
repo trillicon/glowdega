@@ -1,7 +1,7 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculateBreakEven, breakEvenChart } from '../core/breakeven.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { signatureService } from '../ui/professions.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -103,7 +103,7 @@ export const config = mountCalculator({
           { label: 'Break-even revenue', value: money(r.revenue), note: 'a month' },
           { label: 'Appointments a week', value: formatNumber(r.weeklyAppointments, 1) },
           { label: 'Appointments a day', value: formatNumber(r.dailyAppointments, 1) },
-          { label: 'Contribution per appointment', value: money(r.contribution, { cents: true }), note: `${formatPercent(r.contributionMargin)} of each ticket` },
+          { label: 'Contribution per appointment', value: money(r.contribution, { cents: true }), note: `${formatMargin(r.contributionMargin)} of each ticket` },
           { label: 'Monthly fixed costs', value: money(r.fixedCosts), note: fixedNote },
           laborCard,
         ],

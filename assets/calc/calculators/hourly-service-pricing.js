@@ -2,7 +2,7 @@ import { mountCalculator } from '../ui/framework.js';
 import { calculateHourlyServicePricing, BILLING_STEP_MINUTES } from '../core/hourly-pricing.js';
 import { MIN_PROFIT_MARGIN } from '../core/pricing.js';
 import { formatMoney as money, formatNumber } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { longService } from '../ui/professions.js';
 
 // lengths read in hours ("5.5 hours"), never as an example "N-minute service"
@@ -32,7 +32,7 @@ export const config = mountCalculator({
       { label: 'Price for the estimated length', value: money(r.price, cents), note: `${rate} × ${hoursText(r.billedHours)} billed` },
       { label: 'Billed time', value: hoursText(r.billedHours), note: billedWhy },
       { label: 'Deposit at booking', value: r.depositRate > 0 ? money(r.deposit, cents) : 'None', note: r.depositRate > 0 ? `${formatPercent(r.depositRate, 1)} of the price; ${money(r.balance, cents)} due at the appointment` : 'No deposit entered' },
-      { label: 'Profit margin', value: formatPercent(r.margin, 1), note: `${money(r.profit, cents)} profit after every cost and ${timeWord}` },
+      { label: 'Profit margin', value: formatMargin(r.margin), note: `${money(r.profit, cents)} profit after every cost and ${timeWord}` },
       { label: owner ? 'Labor' : 'Your pay', value: money(r.labor, cents),
         note: `${money(r.laborHourly)}/hour × ${hoursText(r.workedHours)} worked` + (r.commission > 0 ? ` + ${money(r.commission, cents)} commission (${formatPercent(r.commissionRate, 1)})` : '') },
       { label: 'Rent', value: money(r.rentShare, cents), note: r.rentShare > 0 ? `${money(r.rentPerHour, cents)}/hour × ${hoursText(r.workedHours)} worked` : 'No rent entered' },
@@ -46,7 +46,7 @@ export const config = mountCalculator({
       ? ` It also pays for ${minutesText(r.unbillableMinutes)} of consultation, setup and cleanup you don’t bill.` : '';
     const insight = `Charge ${rate} for a long service like a ${long}. At ${hoursText(r.serviceHours)}, billed as ${hoursText(r.billedHours)}, this one comes to ${money(r.price, cents)}`
       + (r.depositRate > 0 ? `, with a ${money(r.deposit, cents)} deposit at booking` : '')
-      + `. That covers every cost and ${timeWord} and keeps a ${formatPercent(r.margin, 1)} profit margin.${unbillable}`;
+      + `. That covers every cost and ${timeWord} and keeps a ${formatMargin(r.margin)} profit margin.${unbillable}`;
     const method = [
       `Time worked = ${minutesText(r.estimatedMinutes)} service + ${minutesText(r.unbillableMinutes)} unbillable = ${hoursText(r.workedHours)}. Setup, consultation and cleanup are paid time and use the room, so labor and rent count them; they are never billed.`,
       `${owner ? 'Labor' : 'Your pay'}: ${money(r.laborHourly)}/hour × ${hoursText(r.workedHours)} = ${money(r.laborTime, cents)}.` + (owner ? ` Commission is ${formatPercent(r.commissionRate, 1)} of the price.` : ''),
@@ -54,7 +54,7 @@ export const config = mountCalculator({
       `Products: ${money(r.productFixed, cents)} fixed per appointment + ${money(r.productPerHour, cents)}/hour × ${hoursText(r.serviceHours)} of service = ${money(r.product, cents)}.`,
       `Costs = ${owner ? 'labor' : 'your pay'} + rent + products + ${money(r.supplyCost, cents)} supplies + ${money(r.overhead, cents)} other overhead = ${money(r.costs, cents)}.`,
       `Price needed = ${money(r.costs, cents)} ÷ (1 − ${formatPercent(r.processingRate, 1)} processing` + (owner ? ` − ${formatPercent(r.commissionRate, 1)} commission` : '')
-        + ` − ${formatPercent(r.profitMargin, 1)} margin) = ${money(r.priceNeeded, cents)}. Hourly rate = that ÷ ${hoursText(r.serviceHours)} = ${money(r.exactRate, cents)}, rounded up to ${rate}.`,
+        + ` − ${formatMargin(r.profitMargin)} margin) = ${money(r.priceNeeded, cents)}. Hourly rate = that ÷ ${hoursText(r.serviceHours)} = ${money(r.exactRate, cents)}, rounded up to ${rate}.`,
       `Billed time = the longer of the service and the minimum booking, rounded up in steps of ${minutesText(BILLING_STEP_MINUTES)} (a half hour): ${hoursText(r.billedHours)}. Price = ${rate} × ${hoursText(r.billedHours)} = ${money(r.price, cents)}.`,
       r.depositRate > 0 ? `Deposit = ${formatPercent(r.depositRate, 1)} × ${money(r.price, cents)} = ${money(r.deposit, cents)}.` : 'No deposit was entered.',
       `The profit margin is at least ${formatPercent(MIN_PROFIT_MARGIN)}; a lower margin is not accepted. Rounding the rate up and billing whole half hours only ever adds to it. 50% or more is a strong margin.`,

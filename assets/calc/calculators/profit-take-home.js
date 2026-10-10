@@ -1,7 +1,7 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculateBusinessProfit, calculateEmployeeTakeHome } from '../core/profit.js';
 import { formatMoney as money, describeProfit } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { signatureService } from '../ui/professions.js';
 import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 
@@ -28,7 +28,7 @@ function businessView(v, r, owner, profession) {
     { label: 'Total revenue', value: money(r.totalRevenue), note: r.retailRevenue > 0 ? `${money(r.serviceRevenue)} services + ${money(r.retailRevenue)} retail` : 'a month' },
     { label: 'Business expenses', value: money(r.businessExpenses), note: `Includes ${money(r.ownerComp)} ${payWord}` },
     { label: p.loss ? 'Business loss' : 'Business profit', value: money(p.amount), loss: p.loss,
-      note: p.even ? 'Break-even after paying you' : `${formatPercent(Math.abs(r.profitMargin))} of revenue, after paying you` },
+      note: p.even ? 'Break-even after paying you' : `${formatMargin(Math.abs(r.profitMargin))} of revenue, after paying you` },
     { label: owner ? 'Your owner pay' : 'Your pay', value: money(r.ownerComp), note: 'Counted as a business expense' },
     { label: 'Estimated taxes', value: money(r.estimatedTaxes), note: `At ${pct(v.taxRate)} of your pay + profit` },
     { label: 'Rent', value: money(v.monthlyRent), note: v.monthlyRent > 0 ? 'Its own expense' : 'No rent entered' },
@@ -39,7 +39,7 @@ function businessView(v, r, owner, profession) {
   else if (p.loss) insight = `The business can’t fully cover ${payWord} of ${money(r.ownerComp)}: it runs a ${money(p.amount)} loss after paying you, so your real take-home is ${money(r.takeHome)}, not your full pay after tax.`;
   else if (p.even) insight = `The business breaks even after paying you ${money(r.ownerComp)}: it covers every expense and your pay, with nothing left over. You take home about ${money(r.takeHome)} after estimated taxes.`;
   else if (r.belowMinimum) insight = `The business earns a profit of ${money(r.businessProfit)} after paying you, but its ${marginBelowText(r.profitMargin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum, so it doesn’t count as profitable yet. You take home about ${money(r.takeHome)} after estimated taxes. The Service Pricing Calculator finds prices that keep at least ${formatPercent(MIN_PROFIT_MARGIN)}.`;
-  else insight = `After every expense, ${payWord} included, the business keeps ${money(r.businessProfit)} in profit, a ${formatPercent(r.profitMargin)} margin. Together with your pay, that leaves you about ${money(r.takeHome)} after estimated taxes.`;
+  else insight = `After every expense, ${payWord} included, the business keeps ${money(r.businessProfit)} in profit, a ${formatMargin(r.profitMargin)} margin. Together with your pay, that leaves you about ${money(r.takeHome)} after estimated taxes.`;
   const method = [
     MODEL,
     `Total revenue = ${money(r.serviceRevenue)} services + ${money(r.retailRevenue)} retail = ${money(r.totalRevenue)}.`,

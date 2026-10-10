@@ -1,7 +1,7 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculateServicePricing, MIN_PROFIT_MARGIN } from '../core/pricing.js';
 import { formatMoney as money, describeProfit, formatNumber } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { serviceText } from '../ui/professions.js';
 
 const SHARE_INSIGHT = {
@@ -43,7 +43,7 @@ export const config = mountCalculator({
       { label: 'Recommended price', value: money(r.recommendedPrice, { up: true }) },
       { label: owner ? 'Labor for this service' : 'Your pay for this service', value: money(r.laborAtRecommended, { cents: true }), note: laborNote },
       { label: `Estimated ${p.word.toLowerCase()} ${where}`, value: money(p.amount), loss: p.loss, note: `After paying ${timeWord}` },
-      { label: `Profit margin ${where}`, value: p.loss ? `${formatPercent(-at.margin)} loss` : formatPercent(at.margin), loss: p.loss || r.currentBelowMinimum,
+      { label: `Profit margin ${where}`, value: p.loss ? `${formatMargin(-at.margin)} loss` : formatMargin(at.margin), loss: p.loss || r.currentBelowMinimum,
         note: r.currentBelowMinimum ? `Below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum` : undefined },
       { label: `${owner ? 'Labor + profit' : 'Effective hourly earnings'} ${where}`, value: hourly.loss ? `Loss of ${money(hourly.amount)}/hour` : `${money(at.effectiveHourly)}/hour`, loss: hourly.loss },
     ];
@@ -56,14 +56,14 @@ export const config = mountCalculator({
     const minimum = formatPercent(MIN_PROFIT_MARGIN);
     const belowMinimum = !r.currentBelowMinimum ? ''
       : p.loss ? ` At ${money(r.current.price)} it loses money once ${timeWord} is paid, so it is below the ${minimum} minimum profit margin.`
-        : ` At ${money(r.current.price)} it keeps a ${formatPercent(r.current.margin)} profit margin, below the ${minimum} minimum.`;
+        : ` At ${money(r.current.price)} it keeps a ${formatMargin(r.current.margin)} profit margin, below the ${minimum} minimum.`;
     const insight = {
       under: `You're currently underpricing this service by approximately ${money(r.shownDifference)}.${belowMinimum}`,
       within: 'Your current price is within your recommended range.',
       above: `Your current price is above your recommended range by ${money(r.aboveRangeBy)}. That works as long as clients keep booking.`,
       none: owner
-        ? `Charge at least ${money(r.recommendedPrice, { up: true })} for this ${service.phrase} to cover its costs and labor (${money(hourlyLabor)}/hour${r.commissionRate > 0 ? ` + ${commissionPct} commission` : ''}) and keep a ${formatPercent(toRate(v.profitMargin))} profit margin.`
-        : `Charge at least ${money(r.recommendedPrice, { up: true })} for this ${service.phrase} to cover your costs, pay yourself ${money(hourlyLabor)}/hour and keep a ${formatPercent(toRate(v.profitMargin))} profit margin.`,
+        ? `Charge at least ${money(r.recommendedPrice, { up: true })} for this ${service.phrase} to cover its costs and labor (${money(hourlyLabor)}/hour${r.commissionRate > 0 ? ` + ${commissionPct} commission` : ''}) and keep a ${formatMargin(toRate(v.profitMargin))} profit margin.`
+        : `Charge at least ${money(r.recommendedPrice, { up: true })} for this ${service.phrase} to cover your costs, pay yourself ${money(hourlyLabor)}/hour and keep a ${formatMargin(toRate(v.profitMargin))} profit margin.`,
     }[r.status];
     const method = [
       `${owner ? 'Labor (wage)' : 'Your pay'}: ${money(hourlyLabor)}/hour × ${hrs}` +
@@ -82,7 +82,7 @@ export const config = mountCalculator({
         : 'No other monthly expenses were entered, so no other overhead is added. Add them under “Customize your calculation” for a truer price.',
       `Products and supplies: ${money(v.productCost, { cents: true })}.`,
       `Recommended price = (${owner ? 'wage' : 'your pay'} + products + rent + other overhead) ÷ (1 − ${formatPercent(toRate(v.processingRate), 1)} processing` +
-        (owner ? ` − ${commissionPct} commission` : '') + ` − ${formatPercent(toRate(v.profitMargin), 1)} margin). Solving it this way charges the card fee${owner ? ' and commission' : ''} on the final price, so nothing is left out.`,
+        (owner ? ` − ${commissionPct} commission` : '') + ` − ${formatMargin(toRate(v.profitMargin))} margin). Solving it this way charges the card fee${owner ? ' and commission' : ''} on the final price, so nothing is left out.`,
       `The profit margin is at least ${minimum}; a lower margin is not accepted. Processing${owner ? ', commission' : ''} and margin together must stay below 100% of the price.`,
       'Break-even price = (products + rent + other overhead + labor) ÷ (1 − processing − commission): the lowest price that covers every cost, labor included, with $0 profit.',
       'The recommended range runs from the recommended price to 10% above it, leaving room to round to a menu-friendly number.',

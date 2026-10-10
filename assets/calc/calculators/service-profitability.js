@@ -1,7 +1,7 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculateServiceProfitability } from '../core/profit.js';
 import { formatMoney as money, describeProfit, formatNumber } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 import { serviceText } from '../ui/professions.js';
 
@@ -41,7 +41,7 @@ export const config = mountCalculator({
         note: r.labor > 0 ? laborNote : owner ? 'No wage or commission entered' : 'No pay per hour entered' },
       { label: 'Rent for this service', value: money(r.rentShare, { cents: true }),
         note: r.rentShare > 0 ? `${money(r.rentPerHour, { cents: true })}/hour × ${hrs}` : 'No rent entered' },
-      { label: 'Profit margin', value: p.loss ? `${formatPercent(-r.margin)} loss` : formatPercent(r.margin), loss: p.loss,
+      { label: 'Profit margin', value: p.loss ? `${formatMargin(-r.margin)} loss` : formatMargin(r.margin), loss: p.loss,
         note: r.status === 'below-minimum' ? `Below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum` : undefined },
       { label: 'Profit per hour', value: ph.loss ? `Loss of ${money(ph.amount)}/hour` : `${money(r.profitPerHour)}/hour`, loss: ph.loss },
       { label: 'Revenue per hour', value: `${money(r.revenuePerHour)}/hour` },
@@ -79,7 +79,7 @@ export const config = mountCalculator({
         primary: { value: money(p.amount, { cents: p.amount < 100 }), label: p.loss ? 'Loss per appointment' : p.even ? 'Break-even per appointment' : 'Profit per appointment', loss: p.loss },
         cards, insight, method, tone: r.tone,
         cta: { href: `../service-pricing/?${pricing}`, text: 'Find a recommended price for this service →' },
-        share: { value: formatPercent(Math.max(0, r.margin)), label: `Profit margin on a ${service.phrase}`, insight: p.loss ? 'Time to rethink this service.' : 'Knowing what each service really earns.' },
+        share: { value: formatMargin(Math.max(0, r.margin)), label: `Profit margin on a ${service.phrase}`, insight: p.loss ? 'Time to rethink this service.' : 'Knowing what each service really earns.' },
       },
     };
   },

@@ -2,7 +2,7 @@ import { mountCalculator } from '../ui/framework.js';
 import { calculateDiscount } from '../core/discount.js';
 import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { serviceText } from '../ui/professions.js';
 import { costInputs, costMethod, laborCard } from '../ui/service-costs.js';
 
@@ -46,20 +46,20 @@ export const config = mountCalculator({
       { label: 'Break-even discount', value: r.regularProfitable ? formatPercent(r.breakEvenDiscount, 1) : '0%',
         note: r.regularProfitable ? `Profit is $0 at ${money(r.breakEvenSalePrice, { cents: true })}, labor paid` : 'Any discount adds to the loss' },
       { label: 'Maximum target-profit discount', value: r.regularMeetsTarget ? formatPercent(r.targetDiscount, 1) : '0%',
-        note: r.regularMeetsTarget ? `Keeps a ${formatPercent(r.targetMargin)} margin at ${money(r.targetSalePrice, { cents: true })}` : `The regular price is already below a ${formatPercent(r.targetMargin)} margin` },
+        note: r.regularMeetsTarget ? `Keeps a ${formatMargin(r.targetMargin)} margin at ${money(r.targetSalePrice, { cents: true })}` : `The regular price is already below a ${formatMargin(r.targetMargin)} margin` },
       { label: 'Rent per appointment', value: money(r.rentShare, { cents: true }), note: r.rentShare > 0 ? `${money(r.rentPerHour, { cents: true })}/hour of service time` : 'No rent entered' },
       laborCard(r, type, r.after),
     ];
     const insight = {
       none: r.regularProfitable
         ? `At full price this ${service.phrase} earns ${money(r.before.profit, { cents: true })} an appointment. ` + (r.regularMeetsTarget
-          ? `You could discount it up to ${formatPercent(r.targetDiscount, 1)} and keep a ${formatPercent(r.targetMargin)} margin, or up to ${formatPercent(r.breakEvenDiscount, 1)} before it stops making money.`
-          : `That is already below a ${formatPercent(r.targetMargin)} margin; up to ${formatPercent(r.breakEvenDiscount, 1)} off, it still covers its costs.`)
+          ? `You could discount it up to ${formatPercent(r.targetDiscount, 1)} and keep a ${formatMargin(r.targetMargin)} margin, or up to ${formatPercent(r.breakEvenDiscount, 1)} before it stops making money.`
+          : `That is already below a ${formatMargin(r.targetMargin)} margin; up to ${formatPercent(r.breakEvenDiscount, 1)} off, it still covers its costs.`)
         : `At full price this ${service.phrase} already loses ${money(before.amount, { cents: true })} an appointment, so any discount deepens the loss.`,
-      target: `A ${d} discount costs ${money(r.profitLost, { cents: true })} of profit an appointment (${formatPercent(r.reductionRate)} of it) and still keeps your ${formatPercent(r.targetMargin)} target margin.`,
+      target: `A ${d} discount costs ${money(r.profitLost, { cents: true })} of profit an appointment (${formatPercent(r.reductionRate)} of it) and still keeps your ${formatMargin(r.targetMargin)} target margin.`,
       'below-target': r.afterBelowMinimum
-        ? `A ${d} discount still earns a profit, but its ${marginBelowText(r.after.margin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum, so the discounted service doesn’t count as profitable. It cuts profit by ${formatPercent(r.reductionRate)}; up to ${formatPercent(r.targetDiscount, 1)} keeps your ${formatPercent(r.targetMargin)} target.`
-        : `A ${d} discount is still profitable, but it cuts profit by ${formatPercent(r.reductionRate)} and falls below your ${formatPercent(r.targetMargin)} target margin. Up to ${formatPercent(r.targetDiscount, 1)} keeps the target.`,
+        ? `A ${d} discount still earns a profit, but its ${marginBelowText(r.after.margin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum, so the discounted service doesn’t count as profitable. It cuts profit by ${formatPercent(r.reductionRate)}; up to ${formatPercent(r.targetDiscount, 1)} keeps your ${formatMargin(r.targetMargin)} target.`
+        : `A ${d} discount is still profitable, but it cuts profit by ${formatPercent(r.reductionRate)} and falls below your ${formatMargin(r.targetMargin)} target margin. Up to ${formatPercent(r.targetDiscount, 1)} keeps the target.`,
       even: `A ${d} discount is the break-even discount: every cost, labor included, is paid, and nothing is left over.`,
       loss: r.regularProfitable
         ? `A ${d} discount is more than this service can carry: each discounted appointment loses ${money(after.amount, { cents: true })}. Above ${formatPercent(r.breakEvenDiscount, 1)} the service stops making money.`
@@ -77,7 +77,7 @@ export const config = mountCalculator({
       ...costMethod(v, r, type),
       `Profit = price − cost per appointment. Before: ${money(r.regularPrice, { cents: true })} − ${money(r.before.totalCost, { cents: true })} = ${profitText(r.before.profit, { cents: true })}. After: ${money(r.salePrice, { cents: true })} − ${money(r.after.totalCost, { cents: true })} = ${profitText(r.after.profit, { cents: true })}.`,
       `Break-even discount: the sale price where profit is $0 with labor paid is ${money(r.breakEvenSalePrice, { cents: true })}, ${formatPercent(r.breakEvenDiscount, 1)} below the regular price.`,
-      `Maximum target-profit discount: the lowest sale price that keeps a ${formatPercent(r.targetMargin)} margin is ${money(r.targetSalePrice, { cents: true })} (commission and card fees are shares of the sale price, so they are grossed up like the margin).`,
+      `Maximum target-profit discount: the lowest sale price that keeps a ${formatMargin(r.targetMargin)} margin is ${money(r.targetSalePrice, { cents: true })} (commission and card fees are shares of the sale price, so they are grossed up like the margin).`,
       p ? `Promotion: ${formatNumber(p.appointments, 0)} appointments × each price and each profit, with and without the discount.` : 'Add promotional appointments to compare the whole promotion with and without the discount.',
     ];
     return {

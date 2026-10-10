@@ -2,7 +2,7 @@ import { mountCalculator } from '../ui/framework.js';
 import { calculateMenuProfitability, MAX_MENU_SERVICES, SIMILAR_SHARE } from '../core/menu.js';
 import { parseNumber } from '../core/validation.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
-import { toRate, formatPercent } from '../core/percentages.js';
+import { toRate, formatPercent, formatMargin } from '../core/percentages.js';
 import { signatureService, sampleServices, professionOf } from '../ui/professions.js';
 import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 
@@ -138,7 +138,7 @@ function menuNode(r, recs) {
     const p = describeProfit(s.profit), ph = describeProfit(s.profitPerHour);
     const row = body.insertRow();
     const cells = [s.name, money(s.revenue), formatNumber(s.durationMinutes, 0), p.loss ? `Loss ${money(p.amount, { cents: true })}` : money(p.amount, { cents: true }),
-      p.loss ? `${formatPercent(-s.margin)} loss` : formatPercent(s.margin), ph.loss ? `Loss ${money(ph.amount)}` : money(ph.amount), money(s.revenuePerHour)];
+      p.loss ? `${formatMargin(-s.margin)} loss` : formatMargin(s.margin), ph.loss ? `Loss ${money(ph.amount)}` : money(ph.amount), money(s.revenuePerHour)];
     cells.forEach((text, n) => { const c = row.insertCell(); c.textContent = text; if (p.loss && [3, 4, 5].includes(n)) c.className = 'is-loss'; });
   }
   wrap.append(t);
@@ -184,7 +184,7 @@ export const config = mountCalculator({
       cards = [
         { label: 'Highest profit per appointment', value: by(k.profit.index).name, note: perAppt(by(k.profit.index).profit) },
         { label: 'Highest profit per hour', value: top.name, note: perHour(top.profitPerHour) },
-        { label: 'Highest margin', value: by(k.margin.index).name, note: formatPercent(by(k.margin.index).margin) },
+        { label: 'Highest margin', value: by(k.margin.index).name, note: formatMargin(by(k.margin.index).margin) },
         { label: 'Lowest-performing service', value: low.name, note: perHour(low.profitPerHour), loss: p(low).loss },
         { label: 'Services compared', value: formatNumber(r.count, 0), note: r.lossIndexes.length ? `${formatNumber(r.lossIndexes.length, 0)} at a loss` : 'None at a loss' },
       ];
@@ -192,7 +192,7 @@ export const config = mountCalculator({
       const s = r.services[0];
       const p = describeProfit(s.profit);
       primary = { value: money(p.amount, { cents: true }), label: `${p.loss ? 'Loss' : p.even ? 'Break-even' : 'Profit'} per appointment: ${s.name}`, loss: p.loss };
-      cards = [{ label: 'Profit per hour', value: perHour(s.profitPerHour), loss: p.loss }, { label: 'Margin', value: p.loss ? `${formatPercent(-s.margin)} loss` : formatPercent(s.margin), loss: p.loss },
+      cards = [{ label: 'Profit per hour', value: perHour(s.profitPerHour), loss: p.loss }, { label: 'Margin', value: p.loss ? `${formatMargin(-s.margin)} loss` : formatMargin(s.margin), loss: p.loss },
         { label: 'Revenue per hour', value: `${money(s.revenuePerHour)}/hour` }];
     }
     const rentRow = r.services[0];
