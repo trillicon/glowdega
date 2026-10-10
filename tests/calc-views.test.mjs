@@ -13,6 +13,7 @@ import { config as capacity } from '../assets/calc/calculators/capacity-clients.
 import { config as increase } from '../assets/calc/calculators/price-increase.js';
 import { config as discount } from '../assets/calc/calculators/discount-promotion.js';
 import { config as menu, recommendations } from '../assets/calc/calculators/menu-profitability.js';
+import { config as hourlyPricing } from '../assets/calc/calculators/hourly-service-pricing.js';
 import { PROFESSIONS, serviceText, signatureService, sampleServices, sampleItems, itemPlaceholder, profText } from '../assets/calc/ui/professions.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-6, `${msg ?? ''} expected ${b}, got ${a}`);
@@ -44,6 +45,8 @@ const V = {
     targetHourly: 30, providerWage: 20, commissionRate: 40, processingRate: 0, expectedLoss: 0 },
   discount: { regularPrice: 150, discountRate: 20, promoAppointments: 25, durationMinutes: 60, productCost: 15, monthlyRent: 2000, hoursPerMonth: 160,
     targetHourly: 40, providerWage: 20, commissionRate: 40, overhead: 0, processingRate: 3, targetMargin: 30 },
+  hourlyPricing: { estimatedMinutes: 300, targetHourly: 40, providerWage: 20, commissionRate: 40, monthlyRent: 2000, hoursPerMonth: 160, overhead: 10,
+    productFixed: 20, productPerHour: 4, supplyCost: 6, processingRate: 3, profitMargin: 30, unbillableMinutes: 30, minimumMinutes: 180, depositRate: 25 },
   menu: { monthlyRent: 1600, hoursPerMonth: 160, targetHourly: 30, processingRate: 0, services: [
     { name: 'Facial', price: 120, durationMinutes: 60, productCost: 10, supplyCost: 2, laborHourly: 20, commissionRate: 30 },
     { name: 'Peel', price: 170, durationMinutes: 90, productCost: 20, supplyCost: 5, laborHourly: 20, commissionRate: 30 },
@@ -60,6 +63,7 @@ const CASES = [
   ['price-increase', increase, V.increase, ['solo', 'owner']],
   ['discount-promotion', discount, V.discount, ['solo', 'owner']],
   ['menu-profitability', menu, V.menu, ['solo', 'owner']],
+  ['hourly-service-pricing', hourlyPricing, V.hourlyPricing, ['solo', 'owner']],
 ];
 
 test('profession changes wording only: every calculator gives identical numbers for all four professions', () => {
@@ -472,7 +476,11 @@ test('menu: rankings drive cards and recommendations; descriptive, not prescript
     'Your “Peel” service generates the most profit per appointment.',
     'Your “Facial” service generates the highest profit per hour.',
     '“Lash fill” earns the least per hour ($20/hour). If that gap matters to you, its price or duration may be worth a look.',
+    // $20 profit on $70 = 28.57%: it makes money, but under the shared 30% minimum it is not counted as profitable
+    '“Lash fill” earns a profit, but its 28.6% margin is below the 30% minimum. The Service Pricing Calculator finds a price that keeps at least 30%.',
   ]);
+  assert.equal(solo.view.tone, 'warn', 'one service under 30% turns the menu orange');
+  assert.match(solo.view.insight, /“Lash fill” earns a profit, but its 28\.6% margin is below the 30% minimum/, 'the orange box says why');
   const owner = menu.compute({ values: V.menu, type: 'owner', profession: 'esthetician' });
   near(owner.raw.services[0].labor, 20 + 36, 'owner: row wage × 1 hour + 30% of $120');
   const q = params(owner.view);

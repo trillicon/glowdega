@@ -1,7 +1,7 @@
 // Discounts and promotions. Pure; rates are fractions.
 import { guard } from './validation.js';
 import { serviceCostParts, profitAt } from './costs.js';
-import { MIN_PROFIT_MARGIN } from './pricing.js';
+import { MIN_PROFIT_MARGIN, marginTone, belowMinimumMargin } from './pricing.js';
 
 const EPS = 1e-9;
 const CENT = 0.005;
@@ -54,6 +54,11 @@ export function calculateDiscount({ regularPrice, discountRate = 0, targetMargin
     before, after, profitLost, reductionRate: before.profit > CENT ? profitLost / before.profit : 0, regularProfitable: before.profit > CENT,
     breakEvenSalePrice, breakEvenDiscount, targetSalePrice, targetDiscount, regularMeetsTarget: before.margin >= targetMargin - EPS,
     status,
+    // tone: no discount → the full price's margin (orange if it misses the target); a discount that keeps the target →
+    // the sale price's margin; below target, break-even or a loss → 'warn'
+    tone: status === 'none' ? (before.profit > CENT && before.margin >= targetMargin - EPS ? marginTone(before.margin) : 'warn')
+      : status === 'target' ? marginTone(after.margin) : 'warn',
+    afterBelowMinimum: belowMinimumMargin(after.profit, after.margin), beforeBelowMinimum: belowMinimumMargin(before.profit, before.margin),
     promo: n > 0 ? {
       appointments: n, revenueWithout: regularPrice * n, revenueWith: salePrice * n,
       profitWithout: before.profit * n, profitWith: after.profit * n, profitDifference: (after.profit - before.profit) * n,

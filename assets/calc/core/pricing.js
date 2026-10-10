@@ -11,9 +11,33 @@ const fail = (errors) => ({ ok: false, errors });
 // to 10% above it, which leaves room to round to a menu-friendly number.
 export const RANGE_HEADROOM = 0.10;
 const CENT = 0.005;
-/** The lowest profit margin the Service Pricing Calculator accepts, and its default. */
+/**
+ * The one margin rule every calculator shares. Below 30% a service, price or month is NOT counted as profitable, even
+ * when it makes money; it is also the lowest margin the pricing calculators accept, and their default.
+ */
 export const MIN_PROFIT_MARGIN = 0.30;
+/** A margin of 50% or more is a strong margin. */
+export const STRONG_PROFIT_MARGIN = 0.50;
 const EPS = 1e-9;
+
+/** The result box tones: 'warn' (orange: a loss, break-even, under 30% or a shortfall), 'ok' (30–49.99%), 'strong' (50%+). */
+export const TONES = ['warn', 'ok', 'strong'];
+
+/** The tone a margin earns: under 30% → 'warn', 30% up to 50% → 'ok', 50% or more → 'strong'. */
+export function marginTone(margin) {
+  if (typeof margin !== 'number' || !Number.isFinite(margin) || margin < MIN_PROFIT_MARGIN - EPS) return 'warn';
+  return margin < STRONG_PROFIT_MARGIN - EPS ? 'ok' : 'strong';
+}
+
+/** True when a result makes money but keeps less than the 30% minimum margin. */
+export const belowMinimumMargin = (profit, margin) => profit > CENT && margin < MIN_PROFIT_MARGIN - EPS;
+
+/** A margin under the minimum as the page shows it: to one decimal, but never rounded up to the minimum (29.96% → "29.9%"). */
+export function marginBelowText(margin) {
+  const rounded = Math.round(margin * 1000) / 10;
+  const shown = rounded >= MIN_PROFIT_MARGIN * 100 - EPS ? Math.floor(margin * 1000 + EPS) / 10 : rounded;
+  return `${shown.toLocaleString('en-US', { maximumFractionDigits: 1 })}%`;
+}
 
 /**
  * Price a service.
@@ -92,6 +116,8 @@ export function calculateServicePricing({
     current,
     // the current price keeps less than the 30% minimum profit margin (after costs and paying time at the target rate)
     currentBelowMinimum: current ? current.margin < MIN_PROFIT_MARGIN - EPS : false,
+    // underpriced or under 30% → 'warn'; otherwise the margin at the current price (or the chosen margin when none)
+    tone: current ? (status === 'under' || current.margin < MIN_PROFIT_MARGIN - EPS ? 'warn' : marginTone(current.margin)) : marginTone(profitMargin),
     difference: currentPrice > 0 ? recommendedPrice - currentPrice : 0, // > 0 means underpriced
     // the same gap measured from the price the page shows (rounded up to the dollar), so $117 vs $100 reads as $17, not $16.88
     shownPrice: Math.ceil(recommendedPrice - CENT),
@@ -269,6 +295,11 @@ export function calculatePriceIncrease({ currentPrice, newPrice, monthlyAppointm
     revenueIncrease: next.revenue - current.revenue, annualRevenueIncrease: (next.revenue - current.revenue) * 12,
     profitIncrease: next.monthlyProfit - current.monthlyProfit, annualProfitIncrease: (next.monthlyProfit - current.monthlyProfit) * 12,
     breakEvenClients, clientsYouCanLose,
+    currentBelowMinimum: belowMinimumMargin(current.profit, current.margin), nextBelowMinimum: belowMinimumMargin(next.profit, next.margin),
+    // a price cut, a new price that loses money or lowers profit → 'warn'; otherwise the new price's margin
+    tone: status === 'decrease' ? 'warn'
+      : status === 'none' ? (current.profit > CENT ? marginTone(current.margin) : 'warn')
+        : next.profit <= CENT || next.monthlyProfit - current.monthlyProfit < -CENT ? 'warn' : marginTone(next.margin),
     clientsYouCanLoseWhole: Math.max(0, Math.floor(clientsYouCanLose + 1e-9)),
     clientsToGainWhole: Math.max(0, Math.ceil(-clientsYouCanLose - 1e-9)),
     lossRateYouCanAbsorb: clientsYouCanLose / monthlyAppointments,

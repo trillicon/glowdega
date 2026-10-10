@@ -2,6 +2,7 @@
 // Calculator files (assets/calc/calculators/*.js) only map inputs to an engine function and its result to a view.
 // No financial formulas live here.
 import { parseNumber, hasBadNumber } from '../core/validation.js';
+import { TONES } from '../core/pricing.js';
 import { shareResults, wireSharePanel, emailHref } from './share.js';
 import { PROFESSIONS, PROFESSION_KEY, TYPE_KEY as AUDIENCE_KEY, TYPES, professionOf, profText, savedChoice, saveChoice } from './professions.js';
 
@@ -22,6 +23,20 @@ function ruleOf(input) {
     min: d.min !== undefined ? Number(d.min) : 0, minExclusive: 'minExclusive' in d, minMessage: d.minMessage,
     max: d.max !== undefined ? Number(d.max) : undefined, maxExclusive: 'maxExclusive' in d, integer: 'integer' in d,
   };
+}
+
+/**
+ * The insight box takes its colour from view.tone (every calculator sets one): 'warn' orange for a loss, break-even,
+ * a margin under 30% or a shortfall; 'ok' the brand yellow-green for 30–49.99%; 'strong' deep green for 50%+.
+ * Anything else falls back to the plain box (yellow-green), so a missing tone can never claim a strong result.
+ */
+export function insightClass(tone) {
+  return 'calc-insight' + (TONES.includes(tone) ? ` calc-insight--${tone}` : '');
+}
+function insightNode(view) {
+  const p = el('p', insightClass(view.tone), view.insight);
+  if (TONES.includes(view.tone)) p.dataset.tone = view.tone;
+  return p;
 }
 
 /** Text of a view must never show NaN, Infinity or undefined. */
@@ -158,7 +173,7 @@ export function mountCalculator(config) {
     primary.append(el('div', 'calc-primary__value', view.primary.value), el('div', 'calc-primary__label', view.primary.label));
     if (view.primary.note) primary.append(el('div', 'calc-primary__note', view.primary.note));
     nodes.push(primary);
-    if (view.insight) nodes.push(el('p', 'calc-insight', view.insight));
+    if (view.insight) nodes.push(insightNode(view));
     if (view.cards?.length) {
       const grid = el('div', 'calc-cards');
       grid.append(...view.cards.map(card));

@@ -116,8 +116,8 @@ for name, value in (('HOUSE_RAIL', HOUSE_RAIL), ('HOUSE_INLINE', HOUSE_INLINE), 
 
 check('href="/cdn-cgi/access/logout"' in read('admin/index.html'), 'admin: no Log out link')
 
-# Resources: the hub plus all ten calculators (tools/resources_site.py). No ads on these pages.
-CALCS = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even',
+# Resources: the hub plus all eleven calculators (tools/resources_site.py). No ads on these pages.
+CALCS = ['service-pricing', 'hourly-service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even',
          'profit-take-home', 'menu-profitability', 'capacity-clients', 'price-increase', 'discount-promotion']
 res = ['resources/index.html'] + [f'resources/{c}/index.html' for c in CALCS]
 check(sorted(p for p in pages if p.startswith('resources')) == sorted(res), f'resources: expected exactly {res}')

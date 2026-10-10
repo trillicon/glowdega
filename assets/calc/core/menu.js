@@ -1,6 +1,7 @@
 // Service menu profitability: every service through calculateServiceProfitability, then ranked. Pure.
 import { calculateServiceProfitability } from './profit.js';
 import { guard } from './validation.js';
+import { MIN_PROFIT_MARGIN, STRONG_PROFIT_MARGIN } from './pricing.js';
 
 export const MAX_MENU_SERVICES = 30;
 const CENT = 0.005;
@@ -50,5 +51,11 @@ export function calculateMenuProfitability({ services, monthlyRent = 0, hoursPer
   // highest profit per hour first: the order a service menu review usually starts from
   const order = [...rows].sort((a, b) => b.profitPerHour - a.profitPerHour || a.index - b.index).map((r) => r.index);
   return { ok: true, services: rows, order, rankings, similar, comparing,
-    lossIndexes: rows.filter((r) => r.profit < -CENT).map((r) => r.index), count: rows.length };
+    lossIndexes: rows.filter((r) => r.profit < -CENT).map((r) => r.index), count: rows.length,
+    // the shared 30% rule: services that make money on a margin under 30% (not counted as profitable)
+    belowMinimumIndexes: rows.filter((r) => r.status === 'below-minimum').map((r) => r.index),
+    lowestMargin: Math.min(...rows.map((r) => r.margin)),
+    // the menu's tone is its weakest service: any loss, break-even or margin under 30% → 'warn'; all 50%+ → 'strong'
+    tone: rows.some((r) => r.tone === 'warn') ? 'warn' : rows.every((r) => r.tone === 'strong') ? 'strong' : 'ok',
+    minimumMargin: MIN_PROFIT_MARGIN, strongMargin: STRONG_PROFIT_MARGIN };
 }

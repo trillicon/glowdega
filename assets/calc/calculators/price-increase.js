@@ -1,5 +1,5 @@
 import { mountCalculator } from '../ui/framework.js';
-import { calculatePriceIncrease } from '../core/pricing.js';
+import { calculatePriceIncrease, MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
 import { serviceText } from '../ui/professions.js';
@@ -46,6 +46,14 @@ export const config = mountCalculator({
       insight = `This is a price cut. To bring in the same service revenue at ${money(v.newPrice)}, you would need about ${formatNumber(r.clientsToGainWhole, 0)} more ${r.clientsToGainWhole === 1 ? 'client' : 'clients'} a month.`;
       share = { value: formatNumber(r.clientsToGainWhole, 0), label: 'more clients a month a price cut would need', insight: 'Know what a price change is worth before you make it.' };
     }
+    // the shared 30% rule, on the price the result is about (the new price; the current one when nothing changes)
+    const shown = r.status === 'none' ? cur : next;
+    const thin = r.status === 'none' ? r.currentBelowMinimum : r.nextBelowMinimum;
+    const minimum = formatPercent(MIN_PROFIT_MARGIN);
+    if (describeProfit(shown.profit).loss) insight += ` At ${money(shown.price)} each appointment still loses ${money(describeProfit(shown.profit).amount, { cents: true })} once costs and labor are paid, so it is not profitable.`;
+    else if (thin) insight += ` At ${money(shown.price)} it earns a profit, but its ${marginBelowText(shown.margin)} margin is below the ${minimum} minimum. The Service Pricing Calculator finds a price that keeps at least ${minimum}.`;
+    if (!describeProfit(shown.profit).loss) cards.push({ label: r.status === 'none' ? 'Profit margin' : 'Profit margin at the new price', value: formatPercent(shown.margin),
+      note: thin ? `Below the ${minimum} minimum` : undefined });
     const method = [
       ...costMethod(v, r, type),
       `Monthly revenue = price × appointments. Current: ${money(cur.price)} × ${formatNumber(cur.appointments, 0)} = ${money(cur.revenue)}. New: ${money(next.price)} × ${formatNumber(next.appointments, 1)} = ${money(next.revenue)}.`,
@@ -53,7 +61,8 @@ export const config = mountCalculator({
       `Monthly profit = appointments × (price − cost per appointment at that price). Current: ${money(cur.totalCost, { cents: true })} cost an appointment; new: ${money(next.totalCost, { cents: true })}.`,
       `Clients you could lose = ${formatNumber(cur.appointments, 0)} − (current revenue ${money(cur.revenue)} ÷ new price ${money(next.price)} = ${formatNumber(r.breakEvenClients, 1)}) = ${formatNumber(r.clientsYouCanLose, 1)}, rounded down to whole clients so revenue never drops.`,
       'Rent is shared by the hour, so the time freed by a client who leaves is assumed to go to other work. Annual = monthly × 12.',
+      `Profit margin = profit ÷ price. Under ${minimum} a price is not counted as profitable, even when it makes money; 50% or more is a strong margin.`,
     ];
-    return { ok: true, raw: r, view: { primary, cards, insight, method, share } };
+    return { ok: true, raw: r, view: { primary, cards, insight, method, share, tone: r.tone } };
   },
 });

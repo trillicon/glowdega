@@ -4,6 +4,7 @@ import { parseNumber } from '../core/validation.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
 import { signatureService, sampleServices, professionOf } from '../ui/professions.js';
+import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 
 const MONEY = (name) => ({ name, unit: 'money', max: 10_000_000 });
 // [column, engine key, rule, required, owner only]
@@ -77,9 +78,26 @@ const perHour = (x) => { const d = describeProfit(x); return d.loss ? `loss of $
  * Plain observations from the rankings. Wording stays descriptive ("may be worth a look") because a lower-earning
  * service can still have a reason to be on the menu; only a loss is called out more firmly.
  */
-export function recommendations(r) {
-  if (!r.comparing) return [`Add another service to compare and rank your menu.`];
+/** The orange-box line for a menu with a problem service: losses first, then break-even, then margins under 30%. */
+export function menuWarning(r) {
   const by = (i) => r.services.find((s) => s.index === i);
+  if (r.lossIndexes.length) return `${names(r, r.lossIndexes).join(', ')} ${r.lossIndexes.length === 1 ? 'loses' : 'lose'} money at current numbers, so ${r.lossIndexes.length === 1 ? 'it may be the first one' : 'they may be the first ones'} worth reviewing.`;
+  const even = r.services.filter((s) => s.status === 'even');
+  if (even.length) return `${even.map(quote).join(', ')} ${even.length === 1 ? 'breaks' : 'break'} even: costs and labor are covered with nothing left over.`;
+  const i = r.belowMinimumIndexes[0];
+  return i === undefined ? null : `${quote(by(i))} earns a profit, but its ${marginBelowText(by(i).margin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum. The Service Pricing Calculator finds a price that keeps at least ${formatPercent(MIN_PROFIT_MARGIN)}.`;
+}
+
+export function recommendations(r) {
+  const by = (i) => r.services.find((s) => s.index === i);
+  const thin = (i) => `${quote(by(i))} earns a profit, but its ${marginBelowText(by(i).margin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum. The Service Pricing Calculator finds a price that keeps at least ${formatPercent(MIN_PROFIT_MARGIN)}.`;
+  if (!r.comparing) {
+    const only = r.services[0];
+    const first = r.lossIndexes.length ? [`${quote(only)} loses money at its current price, length and costs.`]
+      : only.status === 'even' ? [`${quote(only)} breaks even: it covers its costs and labor with nothing left over.`]
+        : r.belowMinimumIndexes.length ? [thin(only.index)] : [];
+    return [...first, `Add another service to compare and rank your menu.`];
+  }
   const k = r.rankings;
   const out = [];
   const lead = (rank, what) => (rank.tiedWith.length
@@ -97,6 +115,8 @@ export function recommendations(r) {
   else if (!r.similar) out.push(`${quote(low)} earns the least per hour (${perHour(low.profitPerHour)}). If that gap matters to you, its price or duration may be worth a look.`);
   const otherLosses = r.lossIndexes.filter((i) => i !== low.index);
   if (otherLosses.length) out.push(`${names(r, otherLosses).join(', ')} ${otherLosses.length === 1 ? 'also loses' : 'also lose'} money at current numbers.`);
+  // the shared 30% rule: a service that makes money on a thinner margin is not counted as profitable
+  for (const i of r.belowMinimumIndexes) out.push(thin(i));
   return out;
 }
 
@@ -195,7 +215,7 @@ export const config = mountCalculator({
     return {
       ok: true, raw: r,
       view: {
-        primary, cards, insight: recs[0], method, recommendations: recs,
+        primary, cards, insight: (r.tone === 'warn' && menuWarning(r)) || recs[0], method, recommendations: recs, tone: r.tone,
         extraNode: () => menuNode(r, recs),
         cta: { href: `../service-pricing/?${pricing}`, text: `Find a recommended price for ${quote(focus)} →` },
         share: { value: r.comparing ? by(r.rankings.profitPerHour.index).name : primary.value, label: r.comparing ? 'My most profitable service per hour' : 'Profit per appointment',

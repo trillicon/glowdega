@@ -11,7 +11,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 const SPRINT1 = ['service-pricing', 'hourly-rate', 'service-cost', 'service-profitability', 'break-even'];
 const SPRINT2 = ['profit-take-home', 'menu-profitability', 'capacity-clients', 'price-increase', 'discount-promotion'];
-const CALCS = [...SPRINT1, ...SPRINT2];
+// long services billed by the hour (approved with the 30% / 50% margin tiers)
+const SPRINT3 = ['hourly-service-pricing'];
+const CALCS = [...SPRINT1, ...SPRINT2, ...SPRINT3];
+// every input on the main form, nothing under "Customize your calculation" (the owner wants accuracy)
+const ALL_VISIBLE = ['service-profitability', 'hourly-service-pricing'];
 // calculators for the people who pay rent and labor only: no Employee option at all
 const SOLO_OWNER_ONLY = ['service-cost', 'menu-profitability', 'price-increase', 'discount-promotion'];
 // Capacity & Clients plans bookings, not costs: the one calculator with no rent, expense or labor inputs
@@ -77,7 +81,10 @@ test('calculator pages: shared framework hooks (labels, numeric keyboards, live 
     assert.match(html, /Instagram Story[\s\S]*TikTok[\s\S]*Threads/, `${c}: platform guidance`);
     assert.doesNotMatch(text(html), /we('ll| will) post|auto-?post/i, `${c}: never promise posting`);
     assert.match(html, /<a class="cta" href="mailto:book@fairyglowmother\.com[^"]*">Learn About Coaching<\/a>/, c);
-    assert.match(html, /<details class="calc-advanced">|data-action="add-row"/, `${c}: advanced inputs or line items`);
+    if (ALL_VISIBLE.includes(c)) {
+      assert.doesNotMatch(html, /calc-advanced|<details[^>]*>\s*<summary>Customize|Customize your calculation/, `${c}: no Customize section`);
+      assert.doesNotMatch(one(html, /(<form class="calc-form.*?<\/form>)/s), /<details/, `${c}: no collapsed inputs`);
+    } else assert.match(html, /<details class="calc-advanced">|data-action="add-row"/, `${c}: advanced inputs or line items`);
     for (const input of html.matchAll(/<input id="(f-[^"]+)"([^>]*)>/g)) {
       const [, id, attrs] = input;
       assert.match(attrs, /inputmode="decimal"/, `${c} ${id}`);
@@ -157,7 +164,7 @@ test('hourly rate: employee pay types, each field shown only for its pay type; e
 const LICENSES = [['esthetician', 'Esthetician'], ['cosmetologist', 'Cosmetologist/Hairstylist'], ['manicurist', 'Manicurist/Nail Technician'], ['barber', 'Barber']];
 const optionsOf = (select) => [...select.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]);
 
-test('hub: hero, four categories, all 10 calculators live and linked; only Additional Resources is coming soon', () => {
+test('hub: hero, four categories, all 11 calculators live and linked; only Additional Resources is coming soon', () => {
   const html = read('resources/index.html');
   assert.match(html, /<h1>Beauty Business Calculators<\/h1>/);
   for (const cat of ['Pricing', 'Profitability', 'Growth', 'Promotions']) assert.match(html, new RegExp(`<h2 id="cat-${cat.toLowerCase()}">${cat}</h2>`));
@@ -171,8 +178,9 @@ test('hub: hero, four categories, all 10 calculators live and linked; only Addit
     assert.doesNotMatch(c, /soon-pill|Coming soon/i, 'a live card never says coming soon');
     assert.match(c, /<span class="hub-card__cta">[^<]+ →<\/span>/, 'every live card has a CTA');
   }
-  // the hub lists each category's tools: Pricing 3, Profitability 4, Growth 2, Promotions 1
-  for (const [cat, n] of [['pricing', 3], ['profitability', 4], ['growth', 2], ['promotions', 1]]) {
+  // the hub lists each category's tools: Pricing 4, Profitability 4, Growth 2, Promotions 1
+  assert.equal(CALCS.length, 11);
+  for (const [cat, n] of [['pricing', 4], ['profitability', 4], ['growth', 2], ['promotions', 1]]) {
     assert.match(html, new RegExp(`<h2 id="cat-${cat}">[^<]+</h2><span>${n} tools?</span>`), cat);
   }
   assert.match(html, /Additional Resources/);

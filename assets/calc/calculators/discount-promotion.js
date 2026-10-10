@@ -1,5 +1,6 @@
 import { mountCalculator } from '../ui/framework.js';
 import { calculateDiscount } from '../core/discount.js';
+import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 import { formatMoney as money, formatNumber, describeProfit } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
 import { serviceText } from '../ui/professions.js';
@@ -56,7 +57,9 @@ export const config = mountCalculator({
           : `That is already below a ${formatPercent(r.targetMargin)} margin; up to ${formatPercent(r.breakEvenDiscount, 1)} off, it still covers its costs.`)
         : `At full price this ${service.phrase} already loses ${money(before.amount, { cents: true })} an appointment, so any discount deepens the loss.`,
       target: `A ${d} discount costs ${money(r.profitLost, { cents: true })} of profit an appointment (${formatPercent(r.reductionRate)} of it) and still keeps your ${formatPercent(r.targetMargin)} target margin.`,
-      'below-target': `A ${d} discount is still profitable, but it cuts profit by ${formatPercent(r.reductionRate)} and falls below your ${formatPercent(r.targetMargin)} target margin. Up to ${formatPercent(r.targetDiscount, 1)} keeps the target.`,
+      'below-target': r.afterBelowMinimum
+        ? `A ${d} discount still earns a profit, but its ${marginBelowText(r.after.margin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum, so the discounted service doesn’t count as profitable. It cuts profit by ${formatPercent(r.reductionRate)}; up to ${formatPercent(r.targetDiscount, 1)} keeps your ${formatPercent(r.targetMargin)} target.`
+        : `A ${d} discount is still profitable, but it cuts profit by ${formatPercent(r.reductionRate)} and falls below your ${formatPercent(r.targetMargin)} target margin. Up to ${formatPercent(r.targetDiscount, 1)} keeps the target.`,
       even: `A ${d} discount is the break-even discount: every cost, labor included, is paid, and nothing is left over.`,
       loss: r.regularProfitable
         ? `A ${d} discount is more than this service can carry: each discounted appointment loses ${money(after.amount, { cents: true })}. Above ${formatPercent(r.breakEvenDiscount, 1)} the service stops making money.`
@@ -82,7 +85,7 @@ export const config = mountCalculator({
       view: {
         primary: { value: money(r.salePrice, { cents: true }), label: `Sale price after a ${d} discount`, loss: after.loss,
           note: after.loss ? `Each appointment loses ${money(after.amount, { cents: true })}` : after.even ? 'Break-even: profit is $0' : `${money(r.after.profit, { cents: true })} profit an appointment` },
-        cards, insight, method,
+        cards, insight, method, tone: r.tone,
         extraNode: p ? () => promoTable(p, d) : null,
         share: { value: r.regularProfitable ? formatPercent(r.breakEvenDiscount, 0) : '0%', label: `the deepest discount a ${service.phrase} can take before it loses money`,
           insight: 'Know what a promotion costs before you run it.' },

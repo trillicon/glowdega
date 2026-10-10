@@ -152,7 +152,7 @@ function employeeView(v, profession) {
     ok: true, raw: r,
     view: {
       primary: { value: formatNumber(r.clientsPerWeek, 0), label: 'Clients a week to reach your pay goal', note: `About ${formatNumber(r.clientsPerMonth, 0)} a month for ${money(r.goal)} a ${per} before tax` },
-      cards, insight, method,
+      cards, insight, method, tone: r.fitsInWeek ? 'ok' : 'warn', // no margin: orange only when the goal doesn't fit in a week
       extraNode: r.steps.length ? () => tierTable(r) : null,
       share: { value: formatNumber(r.clientsPerWeek, 0), label: `clients a week to make ${money(r.goal)} a ${per}`,
         insight: `Every pay goal is a number of bookings. Know how many ${service.phrase} appointments yours takes.` },
@@ -249,7 +249,7 @@ export const config = mountCalculator({
       ok: true, raw: r,
       view: {
         primary: { value: formatNumber(r.clientsWhole, 0), label: `Clients a month to reach your ${goalWord}` },
-        cards, insight, method,
+        cards, insight, method, tone: c && !c.goalMet ? 'warn' : 'ok', // no margin: orange when current clients fall short
         extraNode: () => scenarioTable(r),
         share: { value: formatNumber(r.clientsWhole, 0), label: `clients a month to reach ${money(r.revenueGoal)}`,
           insight: `Every revenue goal is a number of bookings. Know how many ${service.phrase} appointments yours takes.` },

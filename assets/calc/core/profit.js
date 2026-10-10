@@ -1,6 +1,7 @@
 // Profit of a single service. Pure; rates are fractions.
 import { guard } from './validation.js';
 import { allocateRent, DEFAULT_HOURS_PER_MONTH } from './overhead.js';
+import { MIN_PROFIT_MARGIN, marginTone } from './pricing.js';
 
 /**
  * revenue     = price
@@ -10,7 +11,9 @@ import { allocateRent, DEFAULT_HOURS_PER_MONTH } from './overhead.js';
  * total cost  = product + supplies + rent share + other overhead + price × processing + labor
  * profit      = revenue − total cost (negative = loss)
  * per hour    = ÷ (duration / 60)
- * Status compares profit per hour with the target hourly profit when one is given.
+ * Status: 'loss', 'even', then 'below-minimum' (a profit, but a margin under the shared 30% minimum: not profitable),
+ * then 'meets-target' / 'below-target' against the target profit per hour when one is given, else 'profitable'.
+ * tone: 'warn' for a loss, break-even, below the minimum or below target; otherwise marginTone (30–49.99% ok, 50%+ strong).
  */
 export function calculateServiceProfitability({
   price, durationMinutes, productCost = 0, supplyCost = 0, overhead = 0,
@@ -43,12 +46,14 @@ export function calculateServiceProfitability({
   let status;
   if (profit < -0.005) status = 'loss';
   else if (Math.abs(profit) <= 0.005) status = 'even';
+  else if (profit / price < MIN_PROFIT_MARGIN - 1e-9) status = 'below-minimum';
   else if (targetHourly > 0) status = profitPerHour + 0.005 >= targetHourly ? 'meets-target' : 'below-target';
   else status = 'profitable';
   return {
     ok: true, revenue: price, hours, rentShare, rentPerHour: rent.rentPerHour, consumables: productCost + supplyCost, processing, commission,
     laborHourly, laborTime, labor, totalCost, profit,
     margin: profit / price, profitPerHour, revenuePerHour: price / hours, targetHourly, status,
+    tone: ['loss', 'even', 'below-minimum', 'below-target'].includes(status) ? 'warn' : marginTone(profit / price),
     // a solo provider keeps both their pay and the profit: everything left after costs, per hour
     earningsPerHour: (profit + laborTime) / hours,
     hourlyGap: targetHourly > 0 ? targetHourly - profitPerHour : 0,
@@ -106,6 +111,9 @@ export function calculateBusinessProfit({
     ok: true, totalRevenue, serviceRevenue, retailRevenue, commission, labor: monthlyPayroll + commission, operatingCosts, ownerComp,
     businessExpenses, businessProfit, profitMargin: businessProfit / totalRevenue, ownerEarnings, estimatedTaxes, takeHome,
     takeHomeAnnual: takeHome * 12, status, earningsShortfall: ownerEarnings < -0.005,
+    // the shared 30% rule: a month that makes a profit on a margin under 30% is not counted as profitable
+    belowMinimum: status === 'profit' && businessProfit / totalRevenue < MIN_PROFIT_MARGIN - 1e-9,
+    tone: status === 'profit' ? marginTone(businessProfit / totalRevenue) : 'warn',
   };
 }
 

@@ -1,4 +1,4 @@
-// node --test tests/  — the calculator engine (assets/calc/core): spec §28 cases for all ten calculators, validation, no NaN/Infinity.
+// node --test tests/  — the calculator engine (assets/calc/core): spec §28 cases for all eleven calculators, validation, no NaN/Infinity.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateServicePricing, calculateHourlyRate, calculateEmployeeEarnings, RANGE_HEADROOM, MIN_PROFIT_MARGIN, EXAMPLE_SERVICE_MINUTES } from '../assets/calc/core/pricing.js';

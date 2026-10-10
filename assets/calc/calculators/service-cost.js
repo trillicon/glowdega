@@ -151,7 +151,7 @@ export const config = mountCalculator({
       ok: true, raw: r,
       view: {
         primary: { value: money(r.trueCost, { cents: true }), label: !hasRent && !hasLabor ? 'True product and supply cost per service' : `True cost per service (products, supplies, ${parts})` },
-        cards, insight, method,
+        cards, insight, method, tone: 'ok', // costs only: no profit or margin verdict, so the default box
         cta: { href: `../service-pricing/?${pricing}`, text: 'Use this cost in the Service Pricing Calculator →' },
         share: { value: money(r.trueCost, { cents: true }), label: hasRent || hasLabor ? `True cost of a ${service.phrase}, ${parts} included` : `True cost of products and supplies for a ${service.phrase}`, insight: 'Every service has a cost before it has a price.' },
       },

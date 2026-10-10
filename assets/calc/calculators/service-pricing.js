@@ -92,7 +92,7 @@ export const config = mountCalculator({
       ok: true, raw: r,
       view: {
         primary: { value: money(r.recommendedPrice, { up: true }), label: 'Recommended service price', note: `Recommended range: ${money(r.range.low, { up: true })}–${money(r.range.high, { whole: true })}` },
-        cards, insight, method,
+        cards, insight, method, tone: r.tone,
         share: { value: money(r.recommendedPrice, { up: true }), label: `Recommended price for a ${service.phrase}`, insight: SHARE_INSIGHT[r.status] },
       },
     };

@@ -87,7 +87,7 @@ export const config = mountCalculator({
           insight: `Your current price does not cover the variable cost${owner && r.commission > 0 ? ' and commission' : ''} of this service. Increase the price or reduce the service cost before calculating break-even.`,
           cards: [{ label: 'Monthly fixed costs', value: money(r.fixedCosts), note: fixedNote }, laborCard,
             { label: r.reason === 'zero' ? 'Contribution per appointment' : 'Loss per appointment (before fixed costs)', value: money(contribution.amount, { cents: true }), loss: r.reason !== 'zero' }],
-          method,
+          method, tone: 'warn', // the price doesn't cover the service's own costs
           share: { value: 'Not yet', label: 'Break-even', insight: 'Prices need to cover costs before a business can break even.' },
         },
       };
@@ -107,7 +107,7 @@ export const config = mountCalculator({
           { label: 'Monthly fixed costs', value: money(r.fixedCosts), note: fixedNote },
           laborCard,
         ],
-        insight, method,
+        insight, method, tone: 'ok', // a target to reach, not a profit verdict: the default box
         extraNode: r.fixedCosts > 0 ? () => chartNode(r) : null,
         share: { value: formatNumber(r.appointmentsWhole, 0), label: 'appointments a month to break even', insight: `Know how many ${sig.text} appointments cover the rent and the pay.` },
       },

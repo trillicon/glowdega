@@ -10,28 +10,36 @@ const S = (name, minutes, phrase = name.toLowerCase()) => ({ name, minutes, phra
 /**
  * services: the license's example services, signature first. name is for row placeholders ("Silk Press"), phrase for
  * sentences ("silk press"). items: product and supply examples for the Cost Per Service rows, in row order
- * (two products, a supply, another consumable).
+ * (two products, a supply, another consumable). long: a service billed by the hour, for the Hourly Service Pricing
+ * Calculator's wording (its length is the visitor's own, never an example length).
  */
 export const PROFESSIONS = {
   esthetician: { label: 'Esthetician',
     services: [S('Signature Facial', 60), S('Chemical Peel', 60), S('Hydrafacial', 60), S('Dermaplaning', 60),
       S('Brow Lamination', 60), S('Lash Lift', 60), S('Back Facial', 90)],
-    items: { product: ['Enzyme mask', 'Hyaluronic serum'], supply: 'Gloves', other: 'Single-use linens' } },
+    items: { product: ['Enzyme mask', 'Hyaluronic serum'], supply: 'Gloves', other: 'Single-use linens' },
+    long: 'full set of lash extensions' },
   cosmetologist: { label: 'Cosmetologist/Hairstylist',
     services: [S('Silk Press', 90), S('Curly Cut', 90), S('Root Touch-Up', 90), S('Blowout', 60), S('Trim & Style', 60), S('Gloss/Toner', 60)],
-    items: { product: ['Developer', 'Toner'], supply: 'Foils', other: 'Neck strips' } },
+    items: { product: ['Developer', 'Toner'], supply: 'Foils', other: 'Neck strips' },
+    long: 'color correction' },
   manicurist: { label: 'Manicurist/Nail Technician',
     services: [S('Gel Manicure', 60), S('Acrylic Full Set', 90), S('Fill', 60), S('Spa Pedicure', 60), S('Gel-X Set', 90, 'Gel-X set')],
-    items: { product: ['Gel polish', 'Tips'], supply: 'Files', other: 'Lint-free wipes' } },
+    items: { product: ['Gel polish', 'Tips'], supply: 'Files', other: 'Lint-free wipes' },
+    long: 'hand-painted nail art set' },
   barber: { label: 'Barber',
     services: [S('Fade', 60), S('Cut & Beard', 60), S('Lineup & Shape-Up', 60), S('Hot Towel Shave', 60), S('Kids’ Cut', 60),
       S('Cut, Beard & Hot Towel Shave', 90)],
-    items: { product: ['Shave cream', 'Beard oil'], supply: 'Neck strips', other: 'Disposable clipper guards' } },
+    items: { product: ['Shave cream', 'Beard oil'], supply: 'Neck strips', other: 'Disposable clipper guards' },
+    long: 'freestyle hair design' },
 };
 export const DEFAULT_PROFESSION = 'esthetician';
 export const professionOf = (p) => (Object.hasOwn(PROFESSIONS, p || '') ? p : DEFAULT_PROFESSION);
 const servicesOf = (p) => PROFESSIONS[professionOf(p)].services;
 const len = (minutes) => `${Number(minutes).toLocaleString('en-US', { maximumFractionDigits: 0 })}-minute`;
+
+/** The license's long, billed-by-the-hour example: "color correction" for a hairstylist. */
+export const longService = (profession) => PROFESSIONS[professionOf(profession)].long;
 
 /** The profession's signature (first-listed) service: "60-minute signature facial", "90-minute silk press". */
 export function signatureService(profession) {
@@ -73,6 +81,7 @@ export function profText(key, profession) {
   if (key === 'signature-minutes') return String(sig.minutes);
   if (key === 'signature-name') return sig.name;
   if (key === 'label') return PROFESSIONS[p].label;
+  if (key === 'long-service') return PROFESSIONS[p].long;
   const m = /^service-(\d+)$/.exec(key);
   if (m) return serviceText(p, Number(m[1])).phrase;
   if (key === 'cost-card') {

@@ -84,7 +84,9 @@ function employeeView(v, r, profession) {
   );
   if (r.goalMet && r.surplus > 0.005) cards.push({ label: 'Above your goal by', value: money(r.surplus), note: 'before tax, a year' });
   method.push('Employees don’t pay rent or the business’s expenses, so none are added.');
-  return { primary, cards, insight, method, share };
+  // no margin here: orange only when the current wage falls short of the goal
+  const tone = r.current && !r.current.meetsGoal ? 'warn' : 'ok';
+  return { primary, cards, insight, method, share, tone };
 }
 
 function ownerView(v, r, type, profession) {
@@ -116,7 +118,7 @@ function ownerView(v, r, type, profession) {
   ];
   return {
     primary: { value: money(r.perClientHour, { cents: true }), label: 'Required revenue per client hour' },
-    cards, method,
+    cards, method, tone: 'ok', // a target to reach, not a verdict: the default box
     insight: `${cap(example.withArticle)} should generate approximately ${money(r.exampleServiceRevenue)} before service-specific costs.`,
     share: { value: `${money(r.perClientHour)}/hr`, label: 'What my client time is worth', insight: `Every client hour, and every ${example.phrase}, has to cover the hours spent on everything else.` },
   };

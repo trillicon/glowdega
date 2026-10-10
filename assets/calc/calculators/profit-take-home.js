@@ -3,6 +3,7 @@ import { calculateBusinessProfit, calculateEmployeeTakeHome } from '../core/prof
 import { formatMoney as money, describeProfit } from '../core/money.js';
 import { toRate, formatPercent } from '../core/percentages.js';
 import { signatureService } from '../ui/professions.js';
+import { MIN_PROFIT_MARGIN, marginBelowText } from '../core/pricing.js';
 
 const PAY_NAMES = { hourly: 'Hourly', commission: 'Commission', mixed: 'Hourly + commission' };
 const payTypeOf = (root) => root?.querySelector('input[name="payType"]:checked')?.value || 'hourly';
@@ -37,7 +38,8 @@ function businessView(v, r, owner, profession) {
   if (earn.loss) insight = `The business spends ${money(earn.amount)} more than it brings in before ${payWord} is paid, so there is nothing to take home this month. Revenue or costs need to change first.`;
   else if (p.loss) insight = `The business can’t fully cover ${payWord} of ${money(r.ownerComp)}: it runs a ${money(p.amount)} loss after paying you, so your real take-home is ${money(r.takeHome)}, not your full pay after tax.`;
   else if (p.even) insight = `The business breaks even after paying you ${money(r.ownerComp)}: it covers every expense and your pay, with nothing left over. You take home about ${money(r.takeHome)} after estimated taxes.`;
-  else insight = `After every expense, ${payWord} included, the business keeps ${money(r.businessProfit)} in profit. Together with your pay, that leaves you about ${money(r.takeHome)} after estimated taxes.`;
+  else if (r.belowMinimum) insight = `The business earns a profit of ${money(r.businessProfit)} after paying you, but its ${marginBelowText(r.profitMargin)} margin is below the ${formatPercent(MIN_PROFIT_MARGIN)} minimum, so it doesn’t count as profitable yet. You take home about ${money(r.takeHome)} after estimated taxes. The Service Pricing Calculator finds prices that keep at least ${formatPercent(MIN_PROFIT_MARGIN)}.`;
+  else insight = `After every expense, ${payWord} included, the business keeps ${money(r.businessProfit)} in profit, a ${formatPercent(r.profitMargin)} margin. Together with your pay, that leaves you about ${money(r.takeHome)} after estimated taxes.`;
   const method = [
     MODEL,
     `Total revenue = ${money(r.serviceRevenue)} services + ${money(r.retailRevenue)} retail = ${money(r.totalRevenue)}.`,
@@ -55,7 +57,7 @@ function businessView(v, r, owner, profession) {
   return {
     primary: t.loss ? { value: money(t.amount), label: 'Monthly shortfall: nothing to take home', loss: true, note: 'The business costs more than it brings in, before your pay.' }
       : { value: money(r.takeHome), label: owner ? 'Owner take-home pay a month' : 'Your take-home pay a month', note: `About ${money(r.takeHomeAnnual)} a year` },
-    cards, insight, method,
+    cards, insight, method, tone: r.tone,
     share: { value: t.loss ? 'Not yet' : money(r.takeHome), label: 'Monthly take-home, after expenses and estimated taxes', insight: `Revenue is not take-home. Know what every ${sig.name} actually pays you.` },
   };
 }
@@ -88,7 +90,7 @@ function employeeView(v, r, profession) {
   );
   return {
     primary: { value: money(r.takeHome), label: 'Estimated take-home pay this month', note: `About ${money(r.takeHomeAnnual)} a year` },
-    cards, insight, method,
+    cards, insight, method, tone: 'ok', // an employee's pay: no business margin, so the default box
     share: { value: money(r.takeHome), label: 'My monthly take-home pay', insight: `Commission, wages and tips: know what every ${sig.name} really pays you.` },
   };
 }

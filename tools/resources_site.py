@@ -20,15 +20,21 @@ PROFESSIONS = [('esthetician', 'Esthetician'), ('cosmetologist', 'Cosmetologist/
 SIG = '<span data-prof="signature">60-minute signature facial</span>'
 SIG_MIN = '<span data-prof="signature-minutes">60</span>'
 SVC90 = '<span data-prof="service-90">90-minute back facial</span>'
+# The long, billed-by-the-hour example for the Hourly Service Pricing page (profText('long-service')).
+LONG_SVC = '<span data-prof="long-service">full set of lash extensions</span>'
 COST_CARD = 'Add up the products and supplies behind a signature facial, chemical peel or hydrafacial, down to the gloves.'
 
 esc = lambda s: html.escape(str(s), quote=True)
 
-# ---------- the ten calculators (hub cards). live=False would show a "Coming soon" card with no link ----------
+# ---------- the eleven calculators (hub cards). live=False would show a "Coming soon" card with no link ----------
 CALCS = [
     dict(slug='service-pricing', cat='Pricing', live=True, name='Service Pricing Calculator', audiences='solo owner',
          desc='Find a price that covers your costs, values your time, and supports your goals.', cta='Calculate Your Price',
          desc_employee='Prices set by the salon or spa? Use What Is Your Time Worth? to see what your hours need to earn.'),
+    dict(slug='hourly-service-pricing', cat='Pricing', live=True, name='Hourly Service Pricing Calculator', audiences='solo owner',
+         desc='Set an hourly rate for long services like color, specialty nail designs or anything over 4 hours, with a minimum booking, deposit and half-hour billing.',
+         cta='Price by the Hour',
+         desc_employee='Rates set by the salon or spa? Use What Is Your Time Worth? to see what your hours need to earn.'),
     dict(slug='hourly-rate', cat='Pricing', live=True, name='What Is Your Time Worth?', audiences='solo employee owner',
          desc='Work out what every client hour needs to bring in to reach the income you want.', cta='Find Your Hourly Rate',
          desc_employee='See what each client hour needs to earn you to reach your take-home goal.'),
@@ -75,8 +81,9 @@ def DURATION(placeholder_hint, **kw):
 # Rent is its own input, shared across the hours worked: rent ÷ hours per month × service hours.
 HOURS_DEFAULT = '160'
 # Employees never see rent: the business pays it. Both fields are always limited to solo providers and owners.
-def RENT(hint='Rent or suite fee for your room or space. It is shared across the hours you work, so longer services carry more of it.'):
-    return F('monthlyRent', 'Monthly rent', 'money', 'monthly rent', max=MONEY_MAX, placeholder='2,000', hint=hint, types=['solo', 'owner'])
+def RENT(hint='Rent or suite fee for your room or space. It is shared across the hours you work, so longer services carry more of it.', required=False):
+    return F('monthlyRent', 'Monthly rent', 'money', 'monthly rent', required=required, max=MONEY_MAX, placeholder='2,000', hint=hint,
+             types=['solo', 'owner'])
 def HOURS():
     return F('hoursPerMonth', 'Hours you work per month', 'hours', 'the hours you work per month', required=True,
              min_exclusive=True, max=744, value=HOURS_DEFAULT,
@@ -85,6 +92,13 @@ def HOURS():
 
 def PCT(key, label, name, **kw):
     return F(key, label, 'percent', name, max=100, max_exclusive=True, **kw)
+PROCESSING_DEFAULT = '2.9'
+def PROCESSING(required=False):
+    return PCT('processingRate', 'Payment processing', 'a payment processing rate', required=required,
+               **({'value': PROCESSING_DEFAULT, 'hint': 'Card fees as a share of the price. Defaults to 2.9%; enter 0 for cash only.'} if required else {'placeholder': PROCESSING_DEFAULT}))
+def MARGIN(hint='Profit kept by the business after costs and pay, as a share of the price. 30% is the minimum; you can set it higher.'):
+    return PCT('profitMargin', 'Desired profit margin', 'a profit margin', required=True, min=30, value='30',
+               min_message='Enter a profit margin of at least 30%.', hint=hint)
 
 # ---------- labor: solo providers and owners only, never employees ----------
 def MONTHLY_PAY(hint='What you pay yourself each month, before tax.'):
@@ -154,6 +168,40 @@ PAGES = {
                   F('nonClientHours', 'Non-client working hours per month', 'hours', 'non-client hours', max=744,
                     placeholder='20', hint='Admin, cleaning, ordering and content: time you work without a client.')],
         crumb_cat='Pricing'),
+    'hourly-service-pricing': dict(
+        title='Hourly Service Pricing Calculator for Long Beauty Services | GLOWDEGA', h1='Hourly Service Pricing Calculator',
+        desc='Set an hourly rate for color, specialty nail designs and services over 4 hours: setup time, minimum bookings, '
+             'half-hour billing and deposits included. Free, no sign-up.',
+        intro=['Some services are too long, or too different each time, for one flat price. Color work, specialty nail designs and anything over 4 hours are often billed by the hour instead. The rate has to pay for more than the time in the chair: the consultation before, the setup and the cleanup after, the product the work uses, and a profit on top.',
+               f'Solo providers enter what an hour of their time should pay them; owners enter the provider’s hourly wage and any commission. Add your monthly rent and the hours you work a month, other overhead, supplies, card processing and your profit margin (30% or more). Product is split in two: a fixed amount every appointment, such as a color formula, and an amount per hour, such as nail art. Then enter the unbillable minutes, any minimum booking, a deposit and the estimated length of a long service like a {LONG_SVC}.',
+               'You get a recommended hourly rate, the price for the estimated length after the minimum and rounding up to the next half hour, the deposit to take at booking, every cost and the profit margin. Treat it as a starting point: demand and your experience still matter.'],
+        types=['solo', 'employee', 'owner'], unsupported=['employee'],
+        type_notes={'employee': 'Hourly rates are usually set by the business you work for. To see what your own time needs to '
+                    'earn, use <a href="../hourly-rate/?type=employee">What Is Your Time Worth?</a>'},
+        basic=[F('estimatedMinutes', 'Estimated service length', 'minutes', 'an estimated service length', required=True, min_exclusive=True,
+                 max=1440, placeholder='300', hint='Hands-on time with the client. It is billed rounded up to the next half hour.'),
+               PAY_PER_HOUR(required=True, hint='What an hour of your time should pay you, before tax. Consultation, setup and cleanup are paid at this rate too.'),
+               WAGE(), COMMISSION('The share of the price paid to the provider. The rate is grossed up for it, like card fees.'),
+               RENT(required=True, hint='Rent or suite fee for your room or space, shared across the hours you work. Enter 0 if you pay none.'),
+               HOURS(),
+               F('overhead', 'Other overhead per appointment', 'money', 'other overhead', required=True, max=MONEY_MAX, placeholder='10',
+                 hint='Other monthly expenses (not rent) ÷ monthly appointments. Enter 0 if there are none.'),
+               F('productFixed', 'Fixed product cost per appointment', 'money', 'a fixed product cost', required=True, max=MONEY_MAX, placeholder='20',
+                 hint='Product used once, whatever the length, such as a color formula or a gel base. Enter 0 if none.'),
+               F('productPerHour', 'Product cost per hour', 'money', 'a product cost per hour', required=True, max=MONEY_MAX, placeholder='4',
+                 hint='Product used as the work goes on, such as nail art, extensions or foils. Enter 0 if none.'),
+               F('supplyCost', 'Supply cost per appointment', 'money', 'a supply cost', required=True, max=MONEY_MAX, placeholder='6',
+                 hint='Gloves, wipes, foils and other disposables. Enter 0 if none.'),
+               PROCESSING(required=True),
+               MARGIN(),
+               F('unbillableMinutes', 'Unbillable time per appointment', 'minutes', 'unbillable time', max=1440, placeholder='30',
+                 hint='Consultation, setup and cleanup you don’t bill. The rate pays for it.'),
+               F('minimumMinutes', 'Minimum booking length', 'minutes', 'a minimum booking length', max=1440, placeholder='180',
+                 hint='Shorter services are billed at this length. Leave blank for no minimum.'),
+               PCT('depositRate', 'Suggested deposit', 'a deposit', placeholder='25',
+                 hint='Taken when the client books; 25–50% is common for long services.')],
+        advanced=[],
+        crumb_cat='Pricing'),
     'hourly-rate': dict(
         title='What Is Your Time Worth? Hourly Rate Calculator for Beauty Pros | GLOWDEGA', h1='What Is Your Time Worth?',
         desc='Work out what each client hour needs to bring in to reach your income goal, after expenses, taxes and '
@@ -215,24 +263,27 @@ PAGES = {
         desc='See what one beauty service really earns per appointment and per hour after products, overhead, card fees '
              'and labor, and compare it with your hourly target.',
         intro=['Two services can bring in the same price and earn very different amounts. A 90-minute back facial and a 60-minute brow lamination might both be on your menu at $120, but one uses more room time and far more product. This calculator shows what a single service earns once its costs, labor included, are paid.',
-               'It is built for solo providers checking their own menu, from lash lifts to root touch-ups, and for owners whose services are performed by staff on wages or commission. Enter the price, how long the service takes, what the products and supplies cost, your monthly rent, which each service carries by the hour, and the labor: your own pay per hour if you work solo, or the provider’s hourly wage and commission if you own the business. Under “Customize your calculation” you can add other overhead, card processing and a target profit per hour.',
-               'The result shows revenue, total cost, labor, profit or loss per appointment, profit margin, and profit and revenue per hour. If the service falls short, the Service Pricing Calculator works out a price that fixes it. Results are estimates to inform your decisions, not financial advice.'],
+               'It is built for solo providers checking their own menu, from lash lifts to root touch-ups, and for owners whose services are performed by staff on wages or commission. Enter the price, how long the service takes, what the products and supplies cost, your monthly rent and the hours you work a month (each service carries rent by the hour), other overhead per appointment, card processing, and the labor: your own pay per hour if you work solo, or the provider’s hourly wage, commission and a target profit per hour if you own the business. Every cost is required, so the answer is only as rough as your numbers.',
+               'The result shows revenue, total cost, labor, profit or loss per appointment, profit margin, and profit and revenue per hour. A service counts as profitable only with a margin of at least 30%. If it falls short, the Service Pricing Calculator works out a price that fixes it. Results are estimates to inform your decisions, not financial advice.'],
         types=['solo', 'employee', 'owner'], unsupported=['employee'],
         type_notes={'employee': 'Service profit belongs to the business you work for. To see what your own time needs to '
                     'earn, use <a href="../hourly-rate/?type=employee">What Is Your Time Worth?</a>'},
         basic=[F('price', 'Service price', 'money', 'a service price', required=True, min_exclusive=True, max=MONEY_MAX, placeholder='120'),
                DURATION(f'For a {SIG}, enter {SIG_MIN}.', required=True, min_exclusive=True),
-               F('productCost', 'Product cost', 'money', 'a product cost', max=MONEY_MAX, placeholder='9'),
-               F('supplyCost', 'Supply cost', 'money', 'a supply cost', max=MONEY_MAX, placeholder='3.50'),
-               RENT(),
+               F('productCost', 'Product cost', 'money', 'a product cost', required=True, max=MONEY_MAX, placeholder='9',
+                 hint='Per service. Enter 0 if it uses none.'),
+               F('supplyCost', 'Supply cost', 'money', 'a supply cost', required=True, max=MONEY_MAX, placeholder='3.50',
+                 hint='Gloves, cotton, foils, wipes: per service. Enter 0 if it uses none.'),
+               RENT(hint='Rent or suite fee for your room or space. It is shared across the hours you work, so longer services carry more of it. Enter 0 if you pay none.', required=True),
+               HOURS(),
+               F('overhead', 'Other overhead per appointment', 'money', 'other overhead', required=True, max=MONEY_MAX, placeholder='8',
+                 hint='Other monthly expenses (not rent) ÷ monthly appointments. Enter 0 if there are none.'),
+               PROCESSING(required=True),
                PAY_PER_HOUR(hint='What an hour of your time should pay you. It is counted as labor, so profit is what is left after you are paid.'),
-               WAGE(), COMMISSION()],
-        advanced=[HOURS(),
-                  F('overhead', 'Other overhead per appointment', 'money', 'other overhead', max=MONEY_MAX, placeholder='8',
-                    hint='Other monthly expenses (not rent) ÷ monthly appointments.'),
-                  PCT('processingRate', 'Payment processing', 'a payment processing rate', placeholder='2.9'),
-                  F('targetProfitPerHour', 'Target profit per hour', 'money', 'a target profit per hour', max=MONEY_MAX, placeholder='30',
-                    hint='Profit the business wants each hour, after labor.', types=['owner'])],
+               WAGE(), COMMISSION(),
+               F('targetProfitPerHour', 'Target profit per hour', 'money', 'a target profit per hour', required=True, max=MONEY_MAX, placeholder='30',
+                 hint='Profit the business wants each hour, after labor. Enter 0 for no target.', types=['owner'])],
+        advanced=[],
         crumb_cat='Profitability'),
     'break-even': dict(
         title='Break-Even Calculator for Salons, Spas & Beauty Studios | GLOWDEGA', h1='Break-Even Calculator',
