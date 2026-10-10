@@ -532,7 +532,9 @@ for dirpath, dirnames, filenames in os.walk(SITE):
         if not fn.endswith('.html'): continue
         path = os.path.join(dirpath, fn)
         doc = open(path).read()
-        new = re.sub(r'<meta (?:property="og:image[^"]*"|name="twitter:card") content="[^"]*">', '', doc)
+        # A rebuild puts the card back where it already was, so the build is idempotent (no churn in unchanged pages).
+        new = re.sub(r'(?:<meta (?:property="og:image[^"]*"|name="twitter:card") content="[^"]*">)+', '\0', doc, count=1)
+        new = re.sub(r'<meta (?:property="og:image[^"]*"|name="twitter:card") content="[^"]*">', '', new)
         add = ''
         title = re.search(r'<title>(.*?)</title>', new, re.S)
         desc = re.search(r'<meta name="description" content="([^"]*)">', new)
@@ -542,7 +544,11 @@ for dirpath, dirnames, filenames in os.walk(SITE):
             add += f'<meta property="og:description" content="{text}">'
         if 'property="og:type"' not in new: add += '<meta property="og:type" content="website">'
         if 'property="og:site_name"' not in new: add += '<meta property="og:site_name" content="GLOWDEGA®">'
-        new = re.sub(r'(</title>)', lambda m: m.group(1) + add + CARD_TAGS, new, count=1) if title else new.replace('</head>', add + CARD_TAGS + '</head>', 1)
+        if '\0' in new:
+            new = new.replace('\0', CARD_TAGS, 1)
+            new = re.sub(r'(</title>)', lambda m: m.group(1) + add, new, count=1) if title else new.replace('</head>', add + '</head>', 1)
+        else:
+            new = re.sub(r'(</title>)', lambda m: m.group(1) + add + CARD_TAGS, new, count=1) if title else new.replace('</head>', add + CARD_TAGS + '</head>', 1)
         if new != doc: open(path, 'w').write(new)
 
 # ---------- stylesheet version ----------
